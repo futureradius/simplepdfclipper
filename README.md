@@ -26,7 +26,7 @@ double-click. No server, no upload, no installation.
 - [x] Precision view with zoom and snapping
 - [x] PDF export with real removal outside the Clip (ADR 0005)
 - [ ] Font substitution dialog (ADR 0006)
-- [ ] UI overhaul (the current UI is a functional prototype)
+- [x] UI overhaul (ADR 0012)
 
 ## Development
 

@@ -36,14 +36,33 @@ test("opens from file://, snaps the Clip in the precision view and exports an SV
   await page.setViewportSize({ width: 1400, height: 900 });
 
   await page.goto(APP);
-  await expect(page.locator("#file")).toBeEnabled({ timeout: 60_000 });
+  await expect(page.locator("#choose")).toBeEnabled({ timeout: 60_000 });
+  await expect(page.locator("#start")).toBeVisible();
+  await page.screenshot({ path: "test-results/start.png" });
   expect(await page.locator("body").getAttribute("data-engine")).toBe("worker");
 
   await page.locator("#file").setInputFiles(TEST_PLAN);
-  await expect(page.locator("#plan-info")).toContainText("1188.9 × 14270.9 mm (geladen in", { timeout: 60_000 });
+  await expect(page.locator("#plan-info")).toContainText("1.188,9 × 14.270,9 mm · geladen in", { timeout: 60_000 });
   await expect(page.locator("#plan-details")).toContainText("UserUnit");
   await expect(page.locator("body")).toHaveAttribute("data-snap-ready", "1", { timeout: 60_000 });
   await expect(page.locator("#snap-status")).toContainText("Linien zum Einrasten");
+
+  // Start view: the Plan's full width fills the precision view.
+  const view = (await page.locator("#viewer-canvas").boundingBox())!;
+  const expectedPercent = (view.width / (1188.9 * 1.02) / (96 / 25.4)) * 100;
+  const shownPercent = Number((await page.locator("#zoom-label").innerText()).replace(/[^0-9,]/g, "").replace(",", "."));
+  console.log(`start zoom ${shownPercent} %, expected ${expectedPercent.toFixed(1)} %`);
+  expect(Math.abs(shownPercent - expectedPercent)).toBeLessThan(1.5);
+  await page.waitForTimeout(600);
+  await page.screenshot({ path: "test-results/workspace.png" });
+
+  // Keyboard: Shift+ArrowRight moves the Clip by 1 mm.
+  const xBefore = await num(page, "#clip-x");
+  await page.locator("#viewer-canvas").click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press("Shift+ArrowRight");
+  expect(await num(page, "#clip-x")).toBeCloseTo(xBefore + 1, 5);
+  await page.keyboard.press("ArrowLeft");
+  expect(await num(page, "#clip-x")).toBeCloseTo(xBefore + 0.9, 5);
 
   // Clip 300..700 x 2000..2250 mm, shown fitted in the precision view.
   await setClip(page, 300, 2000, 400, 250);
@@ -110,5 +129,9 @@ test("opens from file://, snaps the Clip in the precision view and exports an SV
   expect(outPage.toStructuredText("preserve-whitespace").asText()).not.toContain("Bauablaufplan");
   console.log(await page.locator("#export-status").innerText());
   await page.screenshot({ path: "test-results/app.png" });
+  await page.locator("#about-open").click();
+  await expect(page.locator("#about")).toContainText("github.com/futureradius/simplepdfclipper");
+  await page.screenshot({ path: "test-results/about.png" });
+  await page.locator("#about-close").click();
   expect(errors).toEqual([]);
 });

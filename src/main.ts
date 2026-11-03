@@ -9,17 +9,27 @@ import { Viewer, type ViewRect } from "./ui/viewer";
 
 const PT_TO_MM = 25.4 / 72;
 const MB = 1_000_000;
+/** Typical whiteboard tools: above this, boards get sluggish (ADR 0009). */
 const WHITEBOARD_RECOMMENDED = 2 * MB;
+/** Typical whiteboard tools reject files above this. */
 const WHITEBOARD_LIMIT = 45 * MB;
 const GRAB_PX = 8;
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const fmt = (v: number) => v.toFixed(1);
+const de = (v: number, digits = 1) => v.toLocaleString("de-DE", { maximumFractionDigits: digits });
 
-$("version").textContent = `v${__APP_VERSION__} (${__BUILD_DATE__})`;
+$("version").textContent = `Version ${__APP_VERSION__} vom ${__BUILD_DATE__.split("-").reverse().join(".")}`;
 
+// ---- About -----------------------------------------------------------------
+const about = $<HTMLDialogElement>("about");
+$("about-open").addEventListener("click", () => about.showModal());
+$("about-close").addEventListener("click", () => about.close());
+
+// ---- Engine ----------------------------------------------------------------
 const engine = await startEngine().catch((e: unknown) => {
-  $("engine-status").textContent = `PDF-Engine konnte nicht geladen werden: ${String(e)}`;
+  $("engine-status").textContent = "";
+  $("start-error").textContent = `Die PDF-Engine konnte nicht geladen werden: ${String(e)}`;
   throw e;
 });
 $("engine-status").textContent = "";
@@ -99,17 +109,61 @@ const viewer = new Viewer($<HTMLCanvasElement>("viewer-canvas"), {
   },
   dragClip: applyDrag,
   viewChanged(visible, zoomPercent) {
-    $("zoom-label").textContent = `${zoomPercent < 10 ? zoomPercent.toFixed(1) : Math.round(zoomPercent)} %`;
+    $("zoom-label").textContent = `${zoomPercent < 10 ? de(zoomPercent, 1) : Math.round(zoomPercent)} %`;
     if (!plan) return;
     placeBox($("view-box"), visible);
     keepInOverview(visible);
   },
 });
+const showPlanWidth = () => viewer.fitWidth(viewer.visible().y0);
 $("zoom-in").addEventListener("click", () => viewer.zoomBy(1.5));
 $("zoom-out").addEventListener("click", () => viewer.zoomBy(1 / 1.5));
 $("zoom-100").addEventListener("click", () => viewer.zoomTo100());
 $("zoom-clip").addEventListener("click", () => viewer.fitClip());
-$("zoom-width").addEventListener("click", () => viewer.fitWidth(viewer.visible().y0));
+$("zoom-width").addEventListener("click", showPlanWidth);
+
+// ---- Keyboard ----------------------------------------------------------------
+window.addEventListener("keydown", (e) => {
+  if (!plan || about.open || e.ctrlKey || e.metaKey) return;
+  const t = e.target as HTMLElement;
+  if (t.closest("input, textarea, select")) return; // typing in a field
+  const step = e.shiftKey ? 1 : 0.1;
+  const move = (dx: number, dy: number) => setClip({ ...clip, x: clip.x + dx, y: clip.y + dy });
+  switch (e.key) {
+    case "+":
+    case "=":
+      viewer.zoomBy(1.5);
+      break;
+    case "-":
+      viewer.zoomBy(1 / 1.5);
+      break;
+    case "0":
+      showPlanWidth();
+      break;
+    case "1":
+      viewer.zoomTo100();
+      break;
+    case "f":
+    case "F":
+      viewer.fitClip();
+      break;
+    case "ArrowLeft":
+      move(-step, 0);
+      break;
+    case "ArrowRight":
+      move(step, 0);
+      break;
+    case "ArrowUp":
+      move(0, -step);
+      break;
+    case "ArrowDown":
+      move(0, step);
+      break;
+    default:
+      return;
+  }
+  e.preventDefault();
+});
 
 // ---- Overview (navigator) --------------------------------------------------
 const overview = $("overview");
@@ -187,13 +241,12 @@ function showDetails(info: PlanInfo): void {
   );
 }
 
-const input = $<HTMLInputElement>("file");
-input.disabled = false;
-input.addEventListener("change", async () => {
-  const file = input.files?.[0];
-  if (!file) return;
-  $("plan-info").textContent = "Plan wird geöffnet…";
+async function openPlan(file: File): Promise<void> {
+  const busy = plan ? $("plan-info") : $("engine-status");
+  busy.textContent = "Plan wird geöffnet…";
+  $("start-error").textContent = "";
   snapIndex = undefined;
+  delete document.body.dataset.snapReady;
   try {
     const t0 = performance.now();
     const info = await engine.openPlan(await file.arrayBuffer());
@@ -209,7 +262,13 @@ input.addEventListener("change", async () => {
     overviewCanvas.width = preview.widthPx;
     overviewCanvas.height = preview.heightPx;
     overviewCanvas.getContext("2d")!.drawImage(bitmap, 0, 0);
+
+    $("start").hidden = true;
     $("workspace").hidden = false;
+    $("plan-chip").hidden = false;
+    $("plan-name").textContent = file.name;
+    $("export-status").replaceChildren();
+    $("result-img").hidden = true;
     viewer.setPlan(plan.widthMm, plan.heightMm, bitmap);
 
     // Restore the last Clip if it fits this Plan (ADR 0007), else a sensible default.
@@ -220,61 +279,94 @@ input.addEventListener("change", async () => {
     viewer.fitWidth(clip.y);
 
     const secs = ((performance.now() - t0) / 1000).toFixed(1);
-    $("plan-info").textContent = `${file.name}: ${fmt(plan.widthMm)} × ${fmt(plan.heightMm)} mm (geladen in ${secs} s)`;
+    $("plan-info").textContent = `${de(plan.widthMm)} × ${de(plan.heightMm)} mm · geladen in ${secs.replace(".", ",")} s`;
+    $("engine-status").textContent = "";
 
     $("snap-status").textContent = "Einrasten wird vorbereitet…";
     const t1 = performance.now();
     snapIndex = await engine.snapTargets();
     const n = snapIndex.vertical.pos.length + snapIndex.horizontal.pos.length;
-    $("snap-status").textContent = `${n.toLocaleString("de-DE")} Linien zum Einrasten gefunden (${((performance.now() - t1) / 1000).toFixed(1)} s).`;
+    $("snap-status").textContent = `${n.toLocaleString("de-DE")} Linien zum Einrasten gefunden (${de((performance.now() - t1) / 1000)} s).`;
     document.body.dataset.snapReady = "1";
   } catch (e) {
-    $("plan-info").textContent = `Plan konnte nicht geöffnet werden: ${String(e)}`;
+    busy.textContent = "";
+    const msg = `Der Plan konnte nicht geöffnet werden: ${String(e)}`;
+    if (plan) $("plan-info").textContent = msg;
+    else $("start-error").textContent = msg;
   }
+}
+
+const input = $<HTMLInputElement>("file");
+input.disabled = false;
+$<HTMLButtonElement>("choose").disabled = false;
+$("choose").addEventListener("click", () => input.click());
+$("open-other").addEventListener("click", () => input.click());
+input.addEventListener("change", () => {
+  const file = input.files?.[0];
+  if (file) void openPlan(file);
+  input.value = ""; // allow re-opening the same file
+});
+
+// Drag & drop a PDF anywhere onto the window.
+let dragDepth = 0;
+window.addEventListener("dragenter", (e) => {
+  if (!e.dataTransfer?.types.includes("Files")) return;
+  dragDepth++;
+  document.body.classList.add("dragging");
+});
+window.addEventListener("dragleave", () => {
+  if (--dragDepth <= 0) document.body.classList.remove("dragging");
+});
+window.addEventListener("dragover", (e) => e.preventDefault());
+window.addEventListener("drop", (e) => {
+  e.preventDefault();
+  dragDepth = 0;
+  document.body.classList.remove("dragging");
+  const file = [...(e.dataTransfer?.files ?? [])].find((f) => /\.pdf$/i.test(f.name) || f.type === "application/pdf");
+  if (file) void openPlan(file);
+  else if (!plan) $("start-error").textContent = "Bitte eine PDF-Datei ablegen.";
 });
 
 // ---- Export ----------------------------------------------------------------
 const exportButton = $<HTMLButtonElement>("export-svg");
+const pdfButton = $<HTMLButtonElement>("export-pdf");
+const status = $("export-status");
+
+function note(text: string, cls = ""): void {
+  const p = document.createElement("p");
+  p.textContent = text;
+  if (cls) p.className = cls;
+  status.append(p);
+}
+
 exportButton.addEventListener("click", async () => {
   if (!plan) return;
-  const status = $("export-status");
   const mergeMode = (document.querySelector('input[name="merge"]:checked') as HTMLInputElement).value as MergeMode;
   const textAsPaths = $<HTMLInputElement>("text-paths").checked;
-  exportButton.disabled = true;
-  status.textContent = "Wird berechnet…";
+  exportButton.disabled = pdfButton.disabled = true;
+  status.textContent = "SVG wird berechnet…";
   try {
     const r = await engine.exportSvg({ clip, mergeMode, textAsPaths, reuseShapes: false });
     const blob = new Blob([r.svg as BlobPart], { type: "image/svg+xml" });
     const size = blob.size;
 
     status.replaceChildren();
-    const line = document.createElement("p");
-    line.textContent =
-      `Größe ${(size / MB).toLocaleString("de-DE", { maximumFractionDigits: 2 })} MB · ` +
-      `${r.elements.toLocaleString("de-DE")} Elemente (aus ${r.sourceItems.toLocaleString("de-DE")} PDF-Objekten) · ` +
-      `${r.seconds.toLocaleString("de-DE", { maximumFractionDigits: 1 })} s`;
-    status.append(line);
-
+    note(
+      `SVG: ${de(size / MB, 2)} MB · ${r.elements.toLocaleString("de-DE")} Elemente ` +
+        `(aus ${r.sourceItems.toLocaleString("de-DE")} PDF-Objekten) · ${de(r.seconds)} s`,
+    );
     if (size > WHITEBOARD_LIMIT) {
-      const p = document.createElement("p");
-      p.className = "severe";
-      p.textContent =
-        "Achtung: Die Datei ist größer als 45 MB. Das Whiteboard-Tool lehnt Dateien dieser Größe ab. " +
-        "Bitte den Ausschnitt verkleinern oder in mehrere Ausschnitte aufteilen.";
-      status.append(p);
+      note(
+        "Achtung: größer als 45 MB. Gängige Whiteboard-Programme nehmen Dateien dieser Größe nicht an. " +
+          "Bitte den Ausschnitt verkleinern oder in mehrere Ausschnitte aufteilen.",
+        "severe",
+      );
     } else if (size > WHITEBOARD_RECOMMENDED) {
-      const p = document.createElement("p");
-      p.className = "warn";
-      p.textContent = "Hinweis: Größer als 2 MB. Das Whiteboard-Tool empfiehlt kleinere Dateien, das Board kann träge werden.";
-      status.append(p);
+      note("Hinweis: größer als 2 MB. In Whiteboard-Programmen kann das Board dadurch träge werden.", "warn");
     }
     const unsupported = Object.entries(r.unsupported);
-    if (unsupported.length > 0) {
-      const p = document.createElement("p");
-      p.className = "warn";
-      p.textContent = "Nicht vollständig übernommen: " + unsupported.map(([k, n]) => `${k} (${n}×)`).join(", ");
-      status.append(p);
-    }
+    if (unsupported.length > 0)
+      note("Nicht vollständig übernommen: " + unsupported.map(([k, n]) => `${k} (${n}×)`).join(", "), "warn");
 
     const resultImg = $<HTMLImageElement>("result-img");
     URL.revokeObjectURL(resultImg.src);
@@ -283,42 +375,33 @@ exportButton.addEventListener("click", async () => {
 
     await saveFile(blob, `${plan.name}_Ausschnitt.svg`, "SVG-Grafik", "image/svg+xml", ".svg");
   } catch (e) {
-    status.textContent = `Export fehlgeschlagen: ${String(e)}`;
+    status.textContent = `SVG-Export fehlgeschlagen: ${String(e)}`;
   } finally {
-    exportButton.disabled = false;
+    exportButton.disabled = pdfButton.disabled = false;
   }
 });
 
-// ---- PDF export (for documentation; ADR 0005) -------------------------------
-const pdfButton = $<HTMLButtonElement>("export-pdf");
+// PDF export (for documentation; ADR 0005)
 pdfButton.addEventListener("click", async () => {
   if (!plan) return;
-  const status = $("export-status");
-  pdfButton.disabled = true;
-  exportButton.disabled = true;
+  exportButton.disabled = pdfButton.disabled = true;
   status.textContent = "PDF wird erstellt…";
   try {
     const r = await engine.exportPdf({ clip, sourceName: plan.fileName });
     const blob = new Blob([r.pdf as BlobPart], { type: "application/pdf" });
     status.replaceChildren();
-    const line = document.createElement("p");
-    line.textContent =
-      `PDF: ${(blob.size / MB).toLocaleString("de-DE", { maximumFractionDigits: 2 })} MB · ` +
-      `${r.seconds.toLocaleString("de-DE", { maximumFractionDigits: 1 })} s · Inhalte außerhalb des Ausschnitts entfernt`;
-    status.append(line);
-    if (!r.normalised) {
-      const p = document.createElement("p");
-      p.className = "warn";
-      p.textContent =
+    note(`PDF: ${de(blob.size / MB, 2)} MB · ${de(r.seconds)} s · Inhalte außerhalb des Ausschnitts entfernt`);
+    if (!r.normalised)
+      note(
         "Der Ausschnitt ist länger als 5,08 m. Das PDF behält deshalb den Maßstabsfaktor (UserUnit) des Plans; " +
-        "manche Programme zeigen es dadurch verkleinert an.";
-      status.append(p);
-    }
+          "manche Programme zeigen es dadurch verkleinert an.",
+        "warn",
+      );
+    $("result-img").hidden = true;
     await saveFile(blob, `${plan.name}_Ausschnitt.pdf`, "PDF-Dokument", "application/pdf", ".pdf");
   } catch (e) {
     status.textContent = `PDF-Export fehlgeschlagen: ${String(e)}`;
   } finally {
-    pdfButton.disabled = false;
-    exportButton.disabled = false;
+    exportButton.disabled = pdfButton.disabled = false;
   }
 });

@@ -44,8 +44,8 @@ const KEEP_LAYERS = 4;
 const COLORS = {
   background: "#e9e9ec",
   outside: "rgba(30, 30, 40, 0.28)",
-  clip: "#d4145a",
-  guide: "#00a3d7",
+  clip: "#2563eb",
+  guide: "#f59e0b",
 };
 
 export class Viewer {
@@ -105,6 +105,7 @@ export class Viewer {
   }
 
   fitRect(r: ViewRect, margin = 0.08): void {
+    this.measure();
     const w = Math.max(1, r.x1 - r.x0);
     const h = Math.max(1, r.y1 - r.y0);
     this.zoom = clamp(Math.min(this.cssW / (w * (1 + 2 * margin)), this.cssH / (h * (1 + 2 * margin))), MIN_ZOOM, MAX_ZOOM);
@@ -115,6 +116,7 @@ export class Viewer {
 
   /** Fit the Plan's width into the view, with `topMm` near the top edge. */
   fitWidth(topMm = 0): void {
+    this.measure();
     this.zoom = clamp(this.cssW / (this.plan.width * 1.02), MIN_ZOOM, MAX_ZOOM);
     this.cx = this.plan.width / 2;
     const halfH = this.cssH / 2 / this.zoom;
@@ -234,15 +236,27 @@ export class Viewer {
   // ---- Rendering ------------------------------------------------------------
 
   private resize(): void {
+    this.measure();
+    this.viewUpdated();
+  }
+
+  /**
+   * Reads the current size of the view. Called before every fit calculation:
+   * right after the workspace is shown, the ResizeObserver has not reported the
+   * real size yet, and fitting against a stale (1 px) size zoomed far out.
+   */
+  private measure(): void {
     const parent = this.canvas.parentElement!;
     this.dpr = window.devicePixelRatio || 1;
-    this.cssW = Math.max(1, parent.clientWidth);
-    this.cssH = Math.max(1, parent.clientHeight);
-    this.canvas.width = Math.round(this.cssW * this.dpr);
-    this.canvas.height = Math.round(this.cssH * this.dpr);
-    this.canvas.style.width = `${this.cssW}px`;
-    this.canvas.style.height = `${this.cssH}px`;
-    this.viewUpdated();
+    const w = Math.max(1, parent.clientWidth);
+    const h = Math.max(1, parent.clientHeight);
+    if (w === this.cssW && h === this.cssH && this.canvas.width === Math.round(w * this.dpr)) return;
+    this.cssW = w;
+    this.cssH = h;
+    this.canvas.width = Math.round(w * this.dpr);
+    this.canvas.height = Math.round(h * this.dpr);
+    this.canvas.style.width = `${w}px`;
+    this.canvas.style.height = `${h}px`;
   }
 
   private viewUpdated(): void {

@@ -3,110 +3,282 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>simplepdfclipper</title>
+    <title>simple pdf clipper</title>
     <style>
-      :root { --accent: #d4145a; --view: #00a3d7; --line: #cfcfd4; --muted: #666; --panel: #fff; --bg: #f2f2f4; }
+      :root {
+        --bg: #f4f5f7;
+        --surface: #ffffff;
+        --line: #e2e4e9;
+        --line-strong: #cdd1d8;
+        --text: #1d2026;
+        --muted: #6a7180;
+        --accent: #2563eb;
+        --accent-hover: #1d4fd8;
+        --accent-soft: #e8efff;
+        --warn-bg: #fff6e0;
+        --warn-line: #f0c45a;
+        --severe-bg: #fde8e8;
+        --severe-line: #e5484d;
+        --radius: 8px;
+        --shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 4px 12px rgba(16, 24, 40, 0.08);
+      }
       * { box-sizing: border-box; }
       html, body { height: 100%; margin: 0; }
-      body { font: 14px/1.4 "Segoe UI", Arial, sans-serif; background: var(--bg); color: #222; display: flex; flex-direction: column; }
-      header { display: flex; gap: 14px; align-items: center; padding: 8px 14px; background: #fff; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
-      header strong { font-size: 15px; }
-      #version { color: #999; font-size: 12px; }
-      #engine-status, #plan-info { color: var(--muted); font-size: 13px; }
-      .app { flex: 1; min-height: 0; display: grid; grid-template-columns: 330px 1fr 190px; }
-      .app[hidden] { display: none; }
-      .panel { background: var(--panel); border-right: 1px solid var(--line); padding: 12px 14px; overflow: auto; overflow-wrap: anywhere; }
-      .panel h2 { font-size: 14px; margin: 14px 0 8px; }
-      .panel h2:first-child { margin-top: 0; }
-      .fields { display: grid; grid-template-columns: auto 1fr auto; gap: 6px 8px; align-items: center; }
-      .fields input { width: 100%; font: inherit; padding: 2px 4px; }
-      details { margin: 10px 0; }
-      details label { display: block; margin: 4px 0; }
-      label.check { display: block; margin: 6px 0; }
-      button { font: inherit; padding: 5px 12px; cursor: pointer; }
-      button.primary { background: #1f5fae; color: #fff; border: 1px solid #174a87; border-radius: 3px; padding: 6px 14px; }
-      button:disabled { opacity: .5; cursor: default; }
-      .muted { color: var(--muted); font-size: 12px; }
-      .warn { background: #fff1d6; border: 1px solid #e0a940; padding: 6px 8px; margin-top: 8px; }
-      .severe { background: #ffe0e0; border: 1px solid #d33; padding: 6px 8px; margin-top: 8px; font-weight: 600; }
-      table.details { border-collapse: collapse; margin: 8px 0; }
-      table.details td, table.details th { border: 1px solid var(--line); padding: 2px 8px; text-align: left; font-size: 12px; }
-      #result-img[hidden] { display: none; }
-      #result-img { display: block; max-width: 100%; max-height: 220px; margin-top: 8px; border: 1px solid var(--line); background: #fff; }
-      .viewer { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+      body {
+        font: 14px/1.45 "Segoe UI", system-ui, Arial, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        display: flex;
+        flex-direction: column;
+      }
+      button, input { font: inherit; color: inherit; }
+      [hidden] { display: none !important; }
+
+      /* ---- Header ---------------------------------------------------------- */
+      header {
+        height: 52px;
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 0 16px;
+        background: var(--surface);
+        border-bottom: 1px solid var(--line);
+      }
+      .brand { display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 15px; letter-spacing: 0.1px; }
+      .brand svg { color: var(--accent); }
+      #plan-chip { display: flex; align-items: center; gap: 10px; min-width: 0; color: var(--muted); font-size: 13px; }
+      .spacer { flex: 1; }
+
+      /* ---- Buttons ----------------------------------------------------------- */
+      .btn {
+        display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+        height: 34px; padding: 0 14px;
+        border-radius: 6px; border: 1px solid var(--line-strong);
+        background: var(--surface); cursor: pointer; white-space: nowrap;
+      }
+      .btn:hover { background: #f1f3f6; }
+      .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+      .btn.primary:hover { background: var(--accent-hover); }
+      .btn.ghost { border-color: transparent; background: transparent; color: var(--muted); }
+      .btn.ghost:hover { background: #eef0f3; color: var(--text); }
+      .btn:disabled { opacity: 0.5; cursor: default; }
+      .btn:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+      /* ---- Start screen ------------------------------------------------------ */
+      #start { flex: 1; display: grid; place-items: center; padding: 24px; }
+      .drop {
+        width: min(560px, 100%);
+        background: var(--surface);
+        border: 2px dashed var(--line-strong);
+        border-radius: 14px;
+        padding: 44px 32px;
+        text-align: center;
+        box-shadow: var(--shadow);
+        transition: border-color 0.15s, background 0.15s;
+      }
+      body.dragging .drop { border-color: var(--accent); background: var(--accent-soft); }
+      .drop svg { color: var(--accent); }
+      .drop h1 { font-size: 20px; margin: 14px 0 6px; }
+      .drop p { margin: 6px 0; color: var(--muted); }
+      .drop .btn { margin-top: 14px; height: 40px; padding: 0 20px; }
+      #engine-status { margin-top: 14px; font-size: 13px; }
+      #start-error { color: var(--severe-line); }
+
+      /* ---- Workspace ----------------------------------------------------------- */
+      .app { flex: 1; min-height: 0; display: grid; grid-template-columns: 320px 1fr 176px; }
+      .panel { background: var(--surface); border-right: 1px solid var(--line); overflow: auto; padding: 6px 0 18px; }
+      .step { padding: 14px 18px 16px; border-bottom: 1px solid var(--line); }
+      .step:last-child { border-bottom: 0; }
+      .step h2 { display: flex; align-items: center; gap: 9px; font-size: 14px; margin: 0 0 12px; }
+      .step h2 .n {
+        width: 22px; height: 22px; border-radius: 50%;
+        background: var(--accent-soft); color: var(--accent);
+        display: inline-grid; place-items: center; font-size: 12px; font-weight: 700;
+      }
+      .plan-name { font-weight: 600; overflow-wrap: anywhere; }
+      .muted { color: var(--muted); font-size: 12.5px; }
+      .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
+      .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 3px; }
+      .field .input { display: flex; align-items: center; border: 1px solid var(--line-strong); border-radius: 6px; background: #fff; }
+      .field .input:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+      .field input { width: 100%; border: 0; background: transparent; padding: 6px 8px; outline: none; font-variant-numeric: tabular-nums; }
+      .field .unit { padding-right: 9px; color: var(--muted); font-size: 12px; }
+      .switch { display: flex; align-items: center; gap: 10px; margin: 14px 0 4px; cursor: pointer; user-select: none; }
+      .switch input { appearance: none; width: 34px; height: 20px; border-radius: 10px; background: var(--line-strong); position: relative; cursor: pointer; flex: 0 0 auto; transition: background 0.15s; margin: 0; }
+      .switch input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: left 0.15s; }
+      .switch input:checked { background: var(--accent); }
+      .switch input:checked::after { left: 16px; }
+      .hint { margin: 10px 0 0; font-size: 12.5px; color: var(--muted); }
+      kbd { font: 11px/1 ui-monospace, Consolas, monospace; padding: 2px 5px; border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 4px; background: #fafbfc; color: var(--text); }
+      .export-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+      #export-status { margin-top: 10px; font-size: 13px; }
+      #export-status p { margin: 6px 0; }
+      .warn { background: var(--warn-bg); border: 1px solid var(--warn-line); border-radius: 6px; padding: 7px 9px; }
+      .severe { background: var(--severe-bg); border: 1px solid var(--severe-line); border-radius: 6px; padding: 7px 9px; font-weight: 600; }
+      #result-img { display: block; max-width: 100%; max-height: 180px; margin-top: 10px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+      details.advanced { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
+      details.advanced summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+      details.advanced .group { margin: 10px 0 4px; }
+      details.advanced label { display: block; margin: 4px 0; }
+      table.details { border-collapse: collapse; margin: 6px 0; width: 100%; }
+      table.details td, table.details th { border-bottom: 1px solid var(--line); padding: 3px 4px; text-align: left; font-size: 12px; font-weight: normal; }
+      table.details th { color: var(--muted); }
+
+      /* ---- Precision view ------------------------------------------------------ */
+      .viewer { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: #e7e9ee; }
       #viewer-canvas { display: block; touch-action: none; }
-      .viewer-tools { position: absolute; top: 10px; left: 10px; display: flex; gap: 4px; align-items: center; background: rgba(255,255,255,.92); border: 1px solid var(--line); border-radius: 4px; padding: 4px; }
-      .viewer-tools button { padding: 2px 9px; }
-      #zoom-label { min-width: 58px; text-align: center; font-size: 12px; color: var(--muted); }
-      .overview { border-left: 1px solid var(--line); background: #fff; overflow-y: auto; overflow-x: hidden; position: relative; }
-      #overview-inner { position: relative; user-select: none; touch-action: none; }
+      .toolbar {
+        position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
+        display: flex; align-items: center; gap: 2px;
+        background: rgba(255, 255, 255, 0.96); border: 1px solid var(--line);
+        border-radius: 10px; padding: 4px; box-shadow: var(--shadow);
+      }
+      .toolbar .btn { height: 30px; padding: 0 10px; border: 0; background: transparent; }
+      .toolbar .btn:hover { background: #eef0f3; }
+      .toolbar .sep { width: 1px; height: 20px; background: var(--line); margin: 0 4px; }
+      #zoom-label { min-width: 54px; text-align: center; font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+      /* ---- Overview ------------------------------------------------------------- */
+      .overview { border-left: 1px solid var(--line); background: var(--surface); display: flex; flex-direction: column; min-height: 0; }
+      .overview h3 { margin: 0; padding: 10px 12px 8px; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
+      #overview { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 0 10px 10px; }
+      #overview-inner { position: relative; user-select: none; touch-action: none; box-shadow: 0 0 0 1px var(--line); }
       #overview-canvas { display: block; width: 100%; }
-      #clip-box { position: absolute; border: 2px solid var(--accent); background: rgba(212, 20, 90, .08); pointer-events: none; }
-      #view-box { position: absolute; border: 2px solid var(--view); pointer-events: none; }
+      #clip-box { position: absolute; border: 2px solid var(--accent); background: rgba(37, 99, 235, 0.10); pointer-events: none; }
+      #view-box { position: absolute; border: 1.5px dashed #3d4452; pointer-events: none; }
+
+      /* ---- About ---------------------------------------------------------------- */
+      dialog { border: 0; border-radius: 12px; padding: 0; width: min(460px, calc(100% - 32px)); box-shadow: 0 20px 50px rgba(16, 24, 40, 0.25); color: var(--text); }
+      dialog::backdrop { background: rgba(20, 24, 32, 0.35); }
+      dialog .body { padding: 22px 24px 8px; }
+      dialog h2 { margin: 0 0 4px; font-size: 18px; }
+      dialog p { margin: 10px 0; }
+      dialog a { color: var(--accent); }
+      dialog .foot { display: flex; justify-content: flex-end; padding: 12px 16px 16px; }
     </style>
   </head>
   <body>
     <header>
-      <strong>simplepdfclipper</strong>
-      <span id="version"></span>
-      <label>Plan öffnen: <input id="file" type="file" accept="application/pdf,.pdf" disabled /></label>
-      <span id="plan-info"></span>
-      <span id="engine-status">PDF-Engine wird geladen…</span>
+      <div class="brand">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M6 2v14a2 2 0 0 0 2 2h14" /><path d="M18 22V8a2 2 0 0 0-2-2H2" />
+        </svg>
+        simple pdf clipper
+      </div>
+      <div id="plan-chip" hidden>
+        <button class="btn ghost" id="open-other" title="Anderen Plan öffnen">Anderen Plan öffnen…</button>
+      </div>
+      <div class="spacer"></div>
+      <button class="btn ghost" id="about-open">Über</button>
+      <input id="file" type="file" accept="application/pdf,.pdf" hidden disabled />
     </header>
 
-    <div class="app" id="workspace" hidden>
-      <div class="panel">
-        <h2>Ausschnitt (mm)</h2>
-        <div class="fields">
-          <label for="clip-x">Links</label><input id="clip-x" type="number" step="0.1" min="0" /><span class="muted">mm</span>
-          <label for="clip-y">Oben</label><input id="clip-y" type="number" step="0.1" min="0" /><span class="muted">mm</span>
-          <label for="clip-w">Breite</label><input id="clip-w" type="number" step="0.1" min="1" /><span class="muted">mm</span>
-          <label for="clip-h">Höhe</label><input id="clip-h" type="number" step="0.1" min="1" /><span class="muted">mm</span>
-        </div>
-        <label class="check"><input id="snap" type="checkbox" checked /> An Linien einrasten <span class="muted">(Alt gedrückt halten: aus)</span></label>
-        <p class="muted" id="snap-status"></p>
-        <p class="muted">Ziehen an Kanten und Ecken ändert den Ausschnitt. Mausrad zoomt, Ziehen verschiebt die Ansicht. In der Übersicht rechts: klicken springt hin, ziehen zeichnet neu.</p>
-
-        <h2>Export</h2>
-        <label class="check"><input id="text-paths" type="checkbox" /> Text als Pfade</label>
-        <details>
-          <summary>Erweitert</summary>
-          <div>Zusammenfassen gleicher Linien:</div>
-          <label><input type="radio" name="merge" value="exact" /> Exakt</label>
-          <label><input type="radio" name="merge" value="balanced" checked /> Ausgewogen (Standard)</label>
-          <label><input type="radio" name="merge" value="max" /> Maximal <span class="muted">(kleinste Datei; Flächen können über oder unter Linien rutschen, Ergebnis prüfen)</span></label>
-        </details>
-        <button class="primary" id="export-svg">SVG exportieren</button>
-        <button id="export-pdf">PDF exportieren</button>
-        <div id="export-status"></div>
-        <img id="result-img" alt="Exportiertes SVG" hidden />
-
-        <details>
-          <summary>Plan-Details</summary>
-          <table class="details" id="plan-details"></table>
-        </details>
+    <main id="start">
+      <div class="drop">
+        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /><path d="M12 18v-6" /><path d="m9 15 3-3 3 3" />
+        </svg>
+        <h1>Plan hierher ziehen</h1>
+        <p>oder eine PDF-Datei auswählen. Der Plan bleibt auf diesem Computer.</p>
+        <button class="btn primary" id="choose" disabled>Plan auswählen…</button>
+        <p id="engine-status">PDF-Engine wird geladen…</p>
+        <p id="start-error"></p>
       </div>
+    </main>
+
+    <div class="app" id="workspace" hidden>
+      <aside class="panel">
+        <section class="step">
+          <h2><span class="n">1</span>Plan</h2>
+          <div class="plan-name" id="plan-name"></div>
+          <div class="muted" id="plan-info"></div>
+        </section>
+
+        <section class="step">
+          <h2><span class="n">2</span>Ausschnitt</h2>
+          <div class="fields">
+            <div class="field"><label for="clip-x">Links</label><div class="input"><input id="clip-x" type="number" step="0.1" min="0" /><span class="unit">mm</span></div></div>
+            <div class="field"><label for="clip-y">Oben</label><div class="input"><input id="clip-y" type="number" step="0.1" min="0" /><span class="unit">mm</span></div></div>
+            <div class="field"><label for="clip-w">Breite</label><div class="input"><input id="clip-w" type="number" step="0.1" min="1" /><span class="unit">mm</span></div></div>
+            <div class="field"><label for="clip-h">Höhe</label><div class="input"><input id="clip-h" type="number" step="0.1" min="1" /><span class="unit">mm</span></div></div>
+          </div>
+          <label class="switch"><input id="snap" type="checkbox" checked /> An Linien einrasten</label>
+          <div class="muted" id="snap-status"></div>
+          <p class="hint">
+            Kanten und Ecken ziehen. <kbd>Alt</kbd> beim Ziehen: frei platzieren.<br />
+            Pfeiltasten verschieben um 0,1 mm, mit <kbd>Shift</kbd> um 1 mm.<br />
+            Übersicht rechts: klicken springt hin, ziehen zeichnet neu.
+          </p>
+        </section>
+
+        <section class="step">
+          <h2><span class="n">3</span>Export</h2>
+          <div class="export-buttons">
+            <button class="btn primary" id="export-svg">SVG exportieren</button>
+            <button class="btn" id="export-pdf">PDF exportieren</button>
+          </div>
+          <div id="export-status"></div>
+          <img id="result-img" alt="Vorschau des exportierten SVG" hidden />
+
+          <details class="advanced">
+            <summary>Erweitert</summary>
+            <div class="group">
+              <label><input id="text-paths" type="checkbox" /> SVG: Text als Pfade</label>
+            </div>
+            <div class="group">
+              <div class="muted">SVG: gleiche Linien zusammenfassen</div>
+              <label><input type="radio" name="merge" value="exact" /> Exakt</label>
+              <label><input type="radio" name="merge" value="balanced" checked /> Ausgewogen (Standard)</label>
+              <label><input type="radio" name="merge" value="max" /> Maximal <span class="muted">(kleinste Datei; Flächen können über oder unter Linien rutschen)</span></label>
+            </div>
+            <div class="group">
+              <div class="muted">Plan-Details</div>
+              <table class="details" id="plan-details"></table>
+            </div>
+          </details>
+        </section>
+      </aside>
 
       <div class="viewer" id="viewer">
         <canvas id="viewer-canvas"></canvas>
-        <div class="viewer-tools">
-          <button id="zoom-out" title="Verkleinern">−</button>
+        <div class="toolbar" role="toolbar" aria-label="Ansicht">
+          <button class="btn" id="zoom-out" title="Verkleinern (−)">−</button>
           <span id="zoom-label"></span>
-          <button id="zoom-in" title="Vergrößern">+</button>
-          <button id="zoom-100" title="Originalgröße">1:1</button>
-          <button id="zoom-width" title="Ganze Planbreite zeigen">Planbreite</button>
-          <button id="zoom-clip" title="Ganzen Ausschnitt zeigen">Ausschnitt zeigen</button>
+          <button class="btn" id="zoom-in" title="Vergrößern (+)">+</button>
+          <span class="sep"></span>
+          <button class="btn" id="zoom-width" title="Ganze Planbreite (0)">Planbreite</button>
+          <button class="btn" id="zoom-clip" title="Ganzen Ausschnitt zeigen (F)">Ausschnitt</button>
+          <button class="btn" id="zoom-100" title="Originalgröße (1)">1:1</button>
         </div>
       </div>
 
-      <div class="overview" id="overview">
-        <div id="overview-inner">
-          <canvas id="overview-canvas"></canvas>
-          <div id="clip-box"></div>
-          <div id="view-box"></div>
+      <aside class="overview">
+        <h3>Übersicht</h3>
+        <div id="overview">
+          <div id="overview-inner">
+            <canvas id="overview-canvas"></canvas>
+            <div id="clip-box"></div>
+            <div id="view-box"></div>
+          </div>
         </div>
-      </div>
+      </aside>
     </div>
+
+    <dialog id="about">
+      <div class="body">
+        <h2>simple pdf clipper</h2>
+        <div class="muted" id="version"></div>
+        <p>Schneidet einen genauen Ausschnitt aus großen Vektor-PDFs und speichert ihn als schlankes SVG oder als PDF, in dem alles außerhalb des Ausschnitts wirklich entfernt ist. Läuft vollständig lokal; der Plan verlässt diesen Computer nicht.</p>
+        <p>Quellcode: <a href="https://github.com/futureradius/simplepdfclipper" target="_blank" rel="noopener">github.com/futureradius/simplepdfclipper</a></p>
+        <p class="muted">
+          Lizenz: GNU AGPL-3.0 oder neuer.<br />
+          Verwendet <a href="https://mupdf.com/" target="_blank" rel="noopener">MuPDF</a> © Artifex Software, Inc. (AGPL-3.0).<br />
+          Erstellt von futureradius, entwickelt mit Claude.
+        </p>
+      </div>
+      <div class="foot"><button class="btn" id="about-close">Schließen</button></div>
+    </dialog>
     <script type="module" src="./src/main.ts"></script>
   </body>
 </html>

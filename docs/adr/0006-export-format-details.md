@@ -14,7 +14,7 @@ Status: accepted (2026-11-03)
 - **File names:** `<original name>_Ausschnitt.pdf` and `<original name>_Ausschnitt.svg`.
 - **SVG text:** real `<text>` by default. On import the app lists the Plan's fonts
   and proposes a substitute for each (closest-named common Windows font, else Arial);
-  the user can change it (dialog not built yet; the automatic choice is used). Each
+  the user can change it. (Dialog dropped for now, ADR 0012: the automatic choice is used.) Each
   text gets `font-family="<original>,<substitute>,Arial,sans-serif"`. Small visual
   differences between participants' machines are acceptable (all project members use
   Windows).
