@@ -4,11 +4,14 @@ import type { ClipMm, MergeMode } from "./export/index";
 import { saveFile } from "./ui/save";
 import { loadStoredClip, storeClip } from "./ui/storage";
 import { CURSORS, dragClip, hitTest, type Handle, type Point } from "./ui/clipdrag";
+import { snapClip, type Guide, type SnapIndex } from "./ui/snap";
+import { Viewer, type ViewRect } from "./ui/viewer";
 
 const PT_TO_MM = 25.4 / 72;
 const MB = 1_000_000;
 const WHITEBOARD_RECOMMENDED = 2 * MB;
 const WHITEBOARD_LIMIT = 45 * MB;
+const GRAB_PX = 8;
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const fmt = (v: number) => v.toFixed(1);
@@ -19,13 +22,14 @@ const engine = await startEngine().catch((e: unknown) => {
   $("engine-status").textContent = `PDF-Engine konnte nicht geladen werden: ${String(e)}`;
   throw e;
 });
-$("engine-status").textContent = `PDF-Engine bereit (${engine.mode === "worker" ? "Hintergrund-Thread" : "Haupt-Thread"}).`;
+$("engine-status").textContent = "";
 document.body.dataset.engine = engine.mode;
 
 // ---- State ---------------------------------------------------------------
 let plan: { name: string; widthMm: number; heightMm: number } | undefined;
-let clip: ClipMm = { x: 0, y: 0, width: 100, height: 100 };
-let previewScale = 1; // preview px per mm
+let clip: ClipMm = { x: 0, y: 0, width: 0, height: 0 };
+let snapIndex: SnapIndex | undefined;
+const snapToggle = $<HTMLInputElement>("snap");
 
 const fields = {
   x: $<HTMLInputElement>("clip-x"),
@@ -46,7 +50,7 @@ function clampClip(c: ClipMm): ClipMm {
   };
 }
 
-function setClip(c: ClipMm, from: "fields" | "other" = "other"): void {
+function setClip(c: ClipMm, from: "fields" | "other" = "other", guides: Guide[] = []): void {
   clip = clampClip(c);
   if (from !== "fields") {
     fields.x.value = fmt(clip.x);
@@ -54,58 +58,120 @@ function setClip(c: ClipMm, from: "fields" | "other" = "other"): void {
     fields.width.value = fmt(clip.width);
     fields.height.value = fmt(clip.height);
   }
-  const box = $("clip-box");
-  box.style.left = `${clip.x * previewScale}px`;
-  box.style.top = `${clip.y * previewScale}px`;
-  box.style.width = `${Math.max(2, clip.width * previewScale)}px`;
-  box.style.height = `${Math.max(2, clip.height * previewScale)}px`;
-  $("clip-note").textContent = `Ausschnitt: ${fmt(clip.width)} × ${fmt(clip.height)} mm`;
+  placeBox($("clip-box"), { x0: clip.x, y0: clip.y, x1: clip.x + clip.width, y1: clip.y + clip.height });
+  viewer.setClip(clip, guides);
   storeClip(clip);
 }
 
 for (const input of Object.values(fields)) {
   input.addEventListener("input", () => {
-    const v = {
-      x: Number(fields.x.value),
-      y: Number(fields.y.value),
-      width: Number(fields.width.value),
-      height: Number(fields.height.value),
-    };
+    const v = { x: Number(fields.x.value), y: Number(fields.y.value), width: Number(fields.width.value), height: Number(fields.height.value) };
     if (Object.values(v).every(Number.isFinite)) setClip(v, "fields");
   });
   input.addEventListener("change", () => setClip(clip)); // normalise display on blur
 }
 
-// ---- Drag a Clip on the overview ------------------------------------------
-const wrap = $("preview-wrap");
-const GRAB_PX = 8; // how close (screen pixels) the mouse must be to grab an edge
-let drag: { handle: Handle; from: Point; start: ClipMm } | undefined;
-const toMm = (ev: MouseEvent): Point => {
-  const r = $("preview").getBoundingClientRect();
-  return { x: (ev.clientX - r.left) / previewScale, y: (ev.clientY - r.top) / previewScale };
-};
-wrap.addEventListener("mousedown", (ev) => {
-  if (!plan || ev.button !== 0) return;
-  const p = toMm(ev);
-  drag = { handle: hitTest(clip, p, GRAB_PX / previewScale), from: p, start: { ...clip } };
-  ev.preventDefault();
+/** Drag on a Clip handle (from the viewer or the overview), with snapping. */
+function applyDrag(handle: Handle, start: ClipMm, from: Point, to: Point, altKey: boolean, visible: ViewRect, tolMm: number): Guide[] {
+  if (!plan) return [];
+  let c = dragClip(start, handle, from, to, { width: plan.widthMm, height: plan.heightMm });
+  let guides: Guide[] = [];
+  if (snapIndex && snapToggle.checked && !altKey) {
+    const r = snapClip(c, handle, snapIndex, tolMm, visible, { from, to });
+    c = r.clip;
+    guides = r.guides;
+  }
+  setClip(c, "other", guides);
+  return guides;
+}
+
+// ---- Precision view ------------------------------------------------------
+const viewer = new Viewer($<HTMLCanvasElement>("viewer-canvas"), {
+  async render(rect, pxPerMm) {
+    const r = await engine.renderRegion({
+      xMm: rect.x0,
+      yMm: rect.y0,
+      widthMm: rect.x1 - rect.x0,
+      heightMm: rect.y1 - rect.y0,
+      pxPerMm,
+    });
+    return createImageBitmap(new ImageData(r.pixels as Uint8ClampedArray<ArrayBuffer>, r.width, r.height));
+  },
+  dragClip: applyDrag,
+  viewChanged(visible, zoomPercent) {
+    $("zoom-label").textContent = `${zoomPercent < 10 ? zoomPercent.toFixed(1) : Math.round(zoomPercent)} %`;
+    if (!plan) return;
+    placeBox($("view-box"), visible);
+    keepInOverview(visible);
+  },
 });
-window.addEventListener("mousemove", (ev) => {
+$("zoom-in").addEventListener("click", () => viewer.zoomBy(1.5));
+$("zoom-out").addEventListener("click", () => viewer.zoomBy(1 / 1.5));
+$("zoom-100").addEventListener("click", () => viewer.zoomTo100());
+$("zoom-clip").addEventListener("click", () => viewer.fitClip());
+
+// ---- Overview (navigator) --------------------------------------------------
+const overview = $("overview");
+const overviewCanvas = $<HTMLCanvasElement>("overview-canvas");
+/** Overview CSS px per mm (the canvas is scaled to the column width). */
+const overviewScale = () => (plan ? overviewCanvas.clientWidth / plan.widthMm : 1);
+
+function placeBox(el: HTMLElement, r: ViewRect): void {
+  const s = overviewScale();
+  const x0 = Math.max(0, r.x0) * s;
+  const y0 = Math.max(0, r.y0) * s;
+  el.style.left = `${x0}px`;
+  el.style.top = `${y0}px`;
+  el.style.width = `${Math.max(3, Math.min(r.x1 * s, overviewCanvas.clientWidth) - x0)}px`;
+  el.style.height = `${Math.max(3, Math.min(r.y1 * s, overviewCanvas.clientHeight) - y0)}px`;
+}
+
+function keepInOverview(r: ViewRect): void {
+  const s = overviewScale();
+  const top = r.y0 * s;
+  const bottom = r.y1 * s;
+  if (top < overview.scrollTop || bottom > overview.scrollTop + overview.clientHeight)
+    overview.scrollTop = (top + bottom) / 2 - overview.clientHeight / 2;
+}
+
+const overviewPoint = (e: MouseEvent): Point => {
+  const r = overviewCanvas.getBoundingClientRect();
+  const s = overviewScale();
+  return { x: (e.clientX - r.left) / s, y: (e.clientY - r.top) / s };
+};
+
+let ovDrag: { handle: Handle; from: Point; start: ClipMm; screen: Point; moved: boolean } | undefined;
+const ovInner = $("overview-inner");
+ovInner.addEventListener("pointerdown", (e) => {
+  if (!plan || e.button !== 0) return;
+  const p = overviewPoint(e);
+  ovDrag = { handle: hitTest(clip, p, GRAB_PX / overviewScale()), from: p, start: { ...clip }, screen: { x: e.clientX, y: e.clientY }, moved: false };
+  ovInner.setPointerCapture(e.pointerId);
+  e.preventDefault();
+});
+ovInner.addEventListener("pointermove", (e) => {
   if (!plan) return;
-  const p = toMm(ev);
-  if (!drag) {
-    wrap.style.cursor = CURSORS[hitTest(clip, p, GRAB_PX / previewScale)];
+  const p = overviewPoint(e);
+  if (!ovDrag) {
+    ovInner.style.cursor = CURSORS[hitTest(clip, p, GRAB_PX / overviewScale())];
     return;
   }
-  setClip(dragClip(drag.start, drag.handle, drag.from, p, { width: plan.widthMm, height: plan.heightMm }));
+  if (!ovDrag.moved && Math.hypot(e.clientX - ovDrag.screen.x, e.clientY - ovDrag.screen.y) < 4) return;
+  ovDrag.moved = true;
+  const page = { x0: 0, y0: 0, x1: plan.widthMm, y1: plan.heightMm };
+  applyDrag(ovDrag.handle, ovDrag.start, ovDrag.from, p, e.altKey, page, GRAB_PX / overviewScale());
 });
-window.addEventListener("mouseup", () => (drag = undefined));
+ovInner.addEventListener("pointerup", (e) => {
+  if (!ovDrag) return;
+  if (!ovDrag.moved) viewer.centerOn(overviewPoint(e)); // a click navigates
+  else viewer.setClip(clip); // drop guides
+  ovDrag = undefined;
+});
 
 // ---- Open a Plan -----------------------------------------------------------
 function showDetails(info: PlanInfo): void {
   const rows: [string, string][] = [["Seiten", String(info.pageCount)]];
-  for (const [name, b] of Object.entries(info.boxes))
-    rows.push([name, `${fmt(b.widthPt * PT_TO_MM)} × ${fmt(b.heightPt * PT_TO_MM)} mm`]);
+  for (const [name, b] of Object.entries(info.boxes)) rows.push([name, `${fmt(b.widthPt * PT_TO_MM)} × ${fmt(b.heightPt * PT_TO_MM)} mm`]);
   rows.push(["UserUnit", String(info.userUnit)], ["Drehung", `${info.rotate}°`]);
   $<HTMLTableElement>("plan-details").replaceChildren(
     ...rows.map(([k, v]) => {
@@ -125,29 +191,36 @@ input.disabled = false;
 input.addEventListener("change", async () => {
   const file = input.files?.[0];
   if (!file) return;
-  $("workspace").hidden = true;
-  $("result").hidden = true;
   $("plan-info").textContent = "Plan wird geöffnet…";
+  snapIndex = undefined;
   try {
     const t0 = performance.now();
     const info = await engine.openPlan(await file.arrayBuffer());
     plan = { name: file.name.replace(/\.pdf$/i, ""), widthMm: info.widthPt * PT_TO_MM, heightMm: info.heightPt * PT_TO_MM };
-    $("plan-info").textContent = `${file.name}: ${fmt(plan.widthMm)} × ${fmt(plan.heightMm)} mm. Übersicht wird berechnet…`;
     showDetails(info);
     const preview = await engine.renderPreview();
-    const img = $<HTMLImageElement>("preview");
-    URL.revokeObjectURL(img.src);
-    img.src = URL.createObjectURL(new Blob([preview.png as BlobPart], { type: "image/png" }));
-    previewScale = preview.widthPx / plan.widthMm;
+    const bitmap = await createImageBitmap(new ImageData(preview.pixels as Uint8ClampedArray<ArrayBuffer>, preview.widthPx, preview.heightPx));
+    overviewCanvas.width = preview.widthPx;
+    overviewCanvas.height = preview.heightPx;
+    overviewCanvas.getContext("2d")!.drawImage(bitmap, 0, 0);
     $("workspace").hidden = false;
+    viewer.setPlan(plan.widthMm, plan.heightMm, bitmap);
 
     // Restore the last Clip if it fits this Plan (ADR 0007), else a sensible default.
     const stored = loadStoredClip();
     const fits = stored && stored.x + stored.width <= plan.widthMm + 0.05 && stored.y + stored.height <= plan.heightMm + 0.05;
     setClip(fits ? stored : { x: 0, y: 0, width: plan.widthMm, height: Math.min(600, plan.heightMm) });
+    viewer.fitClip();
 
     const secs = ((performance.now() - t0) / 1000).toFixed(1);
     $("plan-info").textContent = `${file.name}: ${fmt(plan.widthMm)} × ${fmt(plan.heightMm)} mm (geladen in ${secs} s)`;
+
+    $("snap-status").textContent = "Einrasten wird vorbereitet…";
+    const t1 = performance.now();
+    snapIndex = await engine.snapTargets();
+    const n = snapIndex.vertical.pos.length + snapIndex.horizontal.pos.length;
+    $("snap-status").textContent = `${n.toLocaleString("de-DE")} Linien zum Einrasten gefunden (${((performance.now() - t1) / 1000).toFixed(1)} s).`;
+    document.body.dataset.snapReady = "1";
   } catch (e) {
     $("plan-info").textContent = `Plan konnte nicht geöffnet werden: ${String(e)}`;
   }
@@ -199,7 +272,7 @@ exportButton.addEventListener("click", async () => {
     const resultImg = $<HTMLImageElement>("result-img");
     URL.revokeObjectURL(resultImg.src);
     resultImg.src = URL.createObjectURL(blob);
-    $("result").hidden = false;
+    resultImg.hidden = false;
 
     await saveFile(blob, `${plan.name}_Ausschnitt.svg`, "SVG-Grafik", "image/svg+xml", ".svg");
   } catch (e) {

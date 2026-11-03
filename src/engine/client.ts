@@ -3,7 +3,8 @@
 
 import wasmGzBase64 from "virtual:mupdf-wasm";
 import EngineWorker from "./worker?worker&inline";
-import type { PlanInfo, Preview, RequestBody, Response, SvgExportRequest, SvgExportResult } from "./protocol";
+import type { PlanInfo, Preview, RegionRequest, RegionResult, RequestBody, Response, SvgExportRequest, SvgExportResult } from "./protocol";
+import type { SnapIndex } from "../ui/snap";
 
 export type EngineMode = "worker" | "main-thread";
 
@@ -11,6 +12,8 @@ export interface Engine {
   mode: EngineMode;
   openPlan(bytes: ArrayBuffer): Promise<PlanInfo>;
   renderPreview(): Promise<Preview>;
+  renderRegion(region: RegionRequest): Promise<RegionResult>;
+  snapTargets(): Promise<SnapIndex>;
   exportSvg(options: SvgExportRequest): Promise<SvgExportResult>;
 }
 
@@ -75,6 +78,8 @@ function workerEngine(wasm: ArrayBuffer, timeoutMs: number): Promise<Engine> {
           mode: "worker",
           openPlan: (bytes) => call<PlanInfo>({ op: "openPlan", bytes }, [bytes]),
           renderPreview: () => call<Preview>({ op: "renderPreview" }),
+          renderRegion: (region) => call<RegionResult>({ op: "renderRegion", region }),
+          snapTargets: () => call<SnapIndex>({ op: "snapTargets" }),
           exportSvg: (options) => call<SvgExportResult>({ op: "exportSvg", options }),
         });
       },
@@ -94,6 +99,8 @@ async function mainThreadEngine(wasm: ArrayBuffer): Promise<Engine> {
     mode: "main-thread",
     openPlan: async (bytes) => core.openPlan(bytes),
     renderPreview: async () => core.renderPreview(),
+    renderRegion: async (region) => core.renderRegion(region),
+    snapTargets: async () => core.snapTargets(),
     exportSvg: async (options) => core.exportSvg(options),
   };
 }

@@ -17,7 +17,18 @@ scope.onmessage = async (ev: MessageEvent<Request>) => {
         break;
       case "renderPreview": {
         const preview = core.renderPreview();
-        scope.postMessage({ id: req.id, ok: true, result: preview } satisfies Response, [preview.png.buffer]);
+        scope.postMessage({ id: req.id, ok: true, result: preview } satisfies Response, [preview.pixels.buffer]);
+        return;
+      }
+      case "renderRegion": {
+        const r = core.renderRegion(req.region);
+        scope.postMessage({ id: req.id, ok: true, result: r } satisfies Response, [r.pixels.buffer]);
+        return;
+      }
+      case "snapTargets": {
+        const r = core.snapTargets();
+        const buffers = [r.vertical, r.horizontal, r.textVertical, r.textHorizontal].flatMap((l) => [l.pos.buffer, l.a.buffer, l.b.buffer]);
+        scope.postMessage({ id: req.id, ok: true, result: r } satisfies Response, buffers);
         return;
       }
       case "exportSvg": {

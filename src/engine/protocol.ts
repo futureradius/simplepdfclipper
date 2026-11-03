@@ -16,9 +16,25 @@ export interface PlanInfo {
 }
 
 export interface Preview {
-  png: Uint8Array;
+  /** RGBA pixels. */
+  pixels: Uint8ClampedArray;
   widthPx: number;
   heightPx: number;
+}
+
+export interface RegionRequest {
+  xMm: number;
+  yMm: number;
+  widthMm: number;
+  heightMm: number;
+  pxPerMm: number;
+}
+
+export interface RegionResult extends RegionRequest {
+  /** RGBA pixels, width × height. */
+  pixels: Uint8ClampedArray;
+  width: number;
+  height: number;
 }
 
 export interface SvgExportRequest {
@@ -40,6 +56,8 @@ export type Request =
   | { id: number; op: "init"; wasmBinary: ArrayBuffer }
   | { id: number; op: "openPlan"; bytes: ArrayBuffer }
   | { id: number; op: "renderPreview" }
+  | { id: number; op: "renderRegion"; region: RegionRequest }
+  | { id: number; op: "snapTargets" }
   | { id: number; op: "exportSvg"; options: SvgExportRequest };
 
 /** A Request without its id (distributes over the union). */

@@ -5,49 +5,56 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>simplepdfclipper</title>
     <style>
-      :root { --accent: #d4145a; --line: #ccc; --muted: #666; }
-      body { font: 14px/1.4 "Segoe UI", Arial, sans-serif; margin: 16px; background: #f4f4f4; color: #222; }
-      header { display: flex; gap: 12px; align-items: baseline; margin-bottom: 8px; }
-      #version { color: #888; font-size: 12px; }
-      .note { background: #fff8d6; border: 1px solid #e6d27a; padding: 6px 10px; display: inline-block; margin: 4px 0; }
-      .layout { display: flex; gap: 24px; align-items: flex-start; }
-      .panel { background: #fff; border: 1px solid var(--line); padding: 12px 14px; flex: 0 0 340px; box-sizing: border-box; position: sticky; top: 16px; overflow-wrap: anywhere; }
-      .panel h2 { font-size: 15px; margin: 0 0 8px; }
+      :root { --accent: #d4145a; --view: #00a3d7; --line: #cfcfd4; --muted: #666; --panel: #fff; --bg: #f2f2f4; }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body { font: 14px/1.4 "Segoe UI", Arial, sans-serif; background: var(--bg); color: #222; display: flex; flex-direction: column; }
+      header { display: flex; gap: 14px; align-items: center; padding: 8px 14px; background: #fff; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+      header strong { font-size: 15px; }
+      #version { color: #999; font-size: 12px; }
+      #engine-status, #plan-info { color: var(--muted); font-size: 13px; }
+      .app { flex: 1; min-height: 0; display: grid; grid-template-columns: 330px 1fr 190px; }
+      .app[hidden] { display: none; }
+      .panel { background: var(--panel); border-right: 1px solid var(--line); padding: 12px 14px; overflow: auto; overflow-wrap: anywhere; }
+      .panel h2 { font-size: 14px; margin: 14px 0 8px; }
+      .panel h2:first-child { margin-top: 0; }
       .fields { display: grid; grid-template-columns: auto 1fr auto; gap: 6px 8px; align-items: center; }
-      .fields input { width: 110px; font: inherit; padding: 2px 4px; }
+      .fields input { width: 100%; font: inherit; padding: 2px 4px; }
       details { margin: 10px 0; }
       details label { display: block; margin: 4px 0; }
-      button { font: inherit; padding: 6px 14px; cursor: pointer; }
-      button.primary { background: #1f5fae; color: #fff; border: 1px solid #174a87; border-radius: 3px; }
+      label.check { display: block; margin: 6px 0; }
+      button { font: inherit; padding: 5px 12px; cursor: pointer; }
+      button.primary { background: #1f5fae; color: #fff; border: 1px solid #174a87; border-radius: 3px; padding: 6px 14px; }
       button:disabled { opacity: .5; cursor: default; }
       .muted { color: var(--muted); font-size: 12px; }
       .warn { background: #fff1d6; border: 1px solid #e0a940; padding: 6px 8px; margin-top: 8px; }
       .severe { background: #ffe0e0; border: 1px solid #d33; padding: 6px 8px; margin-top: 8px; font-weight: 600; }
       table.details { border-collapse: collapse; margin: 8px 0; }
       table.details td, table.details th { border: 1px solid var(--line); padding: 2px 8px; text-align: left; font-size: 12px; }
-      #preview-wrap { position: relative; max-height: 80vh; overflow: auto; border: 1px solid var(--line); background: #fff; display: inline-block; user-select: none; }
-      #preview { display: block; pointer-events: none; }
-      #clip-box { position: absolute; border: 2px solid var(--accent); background: rgba(212, 20, 90, .08); pointer-events: none; box-sizing: border-box; }
-      #clip-box .h { position: absolute; width: 8px; height: 8px; margin: -6px 0 0 -6px; background: #fff; border: 2px solid var(--accent); }
-      #clip-box .nw { left: 0; top: 0; } #clip-box .n { left: 50%; top: 0; } #clip-box .ne { left: 100%; top: 0; }
-      #clip-box .e { left: 100%; top: 50%; } #clip-box .se { left: 100%; top: 100%; } #clip-box .s { left: 50%; top: 100%; }
-      #clip-box .sw { left: 0; top: 100%; } #clip-box .w { left: 0; top: 50%; }
-      #result-wrap { margin-top: 10px; max-height: 50vh; overflow: auto; border: 1px solid var(--line); background: #fff; }
-      #result-img { display: block; max-width: 100%; }
+      #result-img[hidden] { display: none; }
+      #result-img { display: block; max-width: 100%; max-height: 220px; margin-top: 8px; border: 1px solid var(--line); background: #fff; }
+      .viewer { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+      #viewer-canvas { display: block; touch-action: none; }
+      .viewer-tools { position: absolute; top: 10px; left: 10px; display: flex; gap: 4px; align-items: center; background: rgba(255,255,255,.92); border: 1px solid var(--line); border-radius: 4px; padding: 4px; }
+      .viewer-tools button { padding: 2px 9px; }
+      #zoom-label { min-width: 58px; text-align: center; font-size: 12px; color: var(--muted); }
+      .overview { border-left: 1px solid var(--line); background: #fff; overflow-y: auto; overflow-x: hidden; position: relative; }
+      #overview-inner { position: relative; user-select: none; touch-action: none; }
+      #overview-canvas { display: block; width: 100%; }
+      #clip-box { position: absolute; border: 2px solid var(--accent); background: rgba(212, 20, 90, .08); pointer-events: none; }
+      #view-box { position: absolute; border: 2px solid var(--view); pointer-events: none; }
     </style>
   </head>
   <body>
     <header>
       <strong>simplepdfclipper</strong>
       <span id="version"></span>
+      <label>Plan öffnen: <input id="file" type="file" accept="application/pdf,.pdf" disabled /></label>
+      <span id="plan-info"></span>
+      <span id="engine-status">PDF-Engine wird geladen…</span>
     </header>
-    <p class="note">Entwicklungsversion: Ausschnitt in der Übersicht aufziehen, verschieben oder an Ecken und Kanten anpassen, oder über die mm-Felder eingeben. Präzise Ansicht mit Zoom und Einrasten folgt.</p>
-    <p id="engine-status">PDF-Engine wird geladen…</p>
-    <label>Plan öffnen: <input id="file" type="file" accept="application/pdf,.pdf" disabled /></label>
-    <p id="plan-info"></p>
 
-    <div class="layout" id="workspace" hidden>
-
+    <div class="app" id="workspace" hidden>
       <div class="panel">
         <h2>Ausschnitt (mm)</h2>
         <div class="fields">
@@ -56,9 +63,12 @@
           <label for="clip-w">Breite</label><input id="clip-w" type="number" step="0.1" min="1" /><span class="muted">mm</span>
           <label for="clip-h">Höhe</label><input id="clip-h" type="number" step="0.1" min="1" /><span class="muted">mm</span>
         </div>
-        <p class="muted" id="clip-note"></p>
+        <label class="check"><input id="snap" type="checkbox" checked /> An Linien einrasten <span class="muted">(Alt gedrückt halten: aus)</span></label>
+        <p class="muted" id="snap-status"></p>
+        <p class="muted">Ziehen an Kanten und Ecken ändert den Ausschnitt. Mausrad zoomt, Ziehen verschiebt die Ansicht. In der Übersicht rechts: klicken springt hin, ziehen zeichnet neu.</p>
 
-        <label><input id="text-paths" type="checkbox" /> Text als Pfade</label>
+        <h2>Export</h2>
+        <label class="check"><input id="text-paths" type="checkbox" /> Text als Pfade</label>
         <details>
           <summary>Erweitert</summary>
           <div>Zusammenfassen gleicher Linien:</div>
@@ -66,21 +76,34 @@
           <label><input type="radio" name="merge" value="balanced" checked /> Ausgewogen (Standard)</label>
           <label><input type="radio" name="merge" value="max" /> Maximal <span class="muted">(kleinste Datei, Überlappungen können sich ändern)</span></label>
         </details>
-
         <button class="primary" id="export-svg">SVG exportieren</button>
         <div id="export-status"></div>
+        <img id="result-img" alt="Exportiertes SVG" hidden />
 
         <details>
           <summary>Plan-Details</summary>
           <table class="details" id="plan-details"></table>
         </details>
       </div>
-      <div id="preview-wrap"><img id="preview" alt="Übersicht des Plans" /><div id="clip-box"><i class="h nw"></i><i class="h n"></i><i class="h ne"></i><i class="h e"></i><i class="h se"></i><i class="h s"></i><i class="h sw"></i><i class="h w"></i></div></div>
-    </div>
 
-    <div id="result" hidden>
-      <h2 style="font-size: 15px">Ergebnis</h2>
-      <div id="result-wrap"><img id="result-img" alt="Exportiertes SVG" /></div>
+      <div class="viewer" id="viewer">
+        <canvas id="viewer-canvas"></canvas>
+        <div class="viewer-tools">
+          <button id="zoom-out" title="Verkleinern">−</button>
+          <span id="zoom-label"></span>
+          <button id="zoom-in" title="Vergrößern">+</button>
+          <button id="zoom-100" title="Originalgröße">1:1</button>
+          <button id="zoom-clip" title="Ganzen Ausschnitt zeigen">Ausschnitt zeigen</button>
+        </div>
+      </div>
+
+      <div class="overview" id="overview">
+        <div id="overview-inner">
+          <canvas id="overview-canvas"></canvas>
+          <div id="clip-box"></div>
+          <div id="view-box"></div>
+        </div>
+      </div>
     </div>
     <script type="module" src="./src/main.ts"></script>
   </body>
