@@ -6,6 +6,9 @@ Status: accepted (2026-11-03)
 
 - **Page size:** the exported page is exactly the Clip at 1:1 scale. No fitting to
   paper sizes (the PDF viewer can scale when printing).
+- **PDF scale (UserUnit):** if the Clip is at most 5,080 mm per side, the exported PDF
+  has UserUnit 1 (the scale is baked into the content), so every viewer shows it at
+  real size. Longer Clips keep the Plan's UserUnit; the UI says so.
 - **Units:** the UI shows and accepts millimetres with 0.1 mm resolution. Origin is the
   top-left corner of the Plan.
 - **File names:** `<original name>_Ausschnitt.pdf` and `<original name>_Ausschnitt.svg`.
