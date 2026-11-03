@@ -1,8 +1,8 @@
 # simplepdfclipper
 
-Cut a precise rectangle out of a huge vector PDF (e.g. a 1188.9 × 14270.9 mm construction
-schedule) and export it as a **small, sharp SVG** (for the whiteboard tool) and as a **PDF**
-in which everything outside the clip is actually removed, not just hidden.
+Cut a precise rectangle out of a huge vector PDF (e.g. construction schedule)
+and export it as a **SVG** and as a **PDF** in which everything outside the clip
+is actually removed, not just hidden.
 
 Runs fully local: the whole app is a single HTML file you open in Microsoft Edge by
 double-click. No server, no upload, no installation.
