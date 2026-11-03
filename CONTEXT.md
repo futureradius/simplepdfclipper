@@ -23,7 +23,13 @@ A horizontal or vertical line or text edge already in the Plan (grid lines, row
 borders, date column boundaries) that a Clip edge can snap to.
 
 **Export**
-Writing the Clip to a file. Always vector (PDF and SVG). No raster output.
+Writing the Clip to a file. Always vector (PDF and SVG). No raster output. The
+exported page is exactly the Clip at 1:1. Content outside the Clip is actually
+removed, not just hidden.
+
+**Test Plan**
+A generated stand-in for a real schedule (same size, dense vector lines, bars and
+small text, ~3 MB). Used for development and performance tests. Never committed.
 
 ## Users
 
