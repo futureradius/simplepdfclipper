@@ -53,13 +53,26 @@ export interface SvgExportResult {
   seconds: number;
 }
 
+export interface PdfExportRequest {
+  clip: ClipMm;
+  sourceName: string;
+}
+
+export interface PdfExportResult {
+  pdf: Uint8Array;
+  /** Page rescaled to UserUnit 1 (false: Clip longer than 5,080 mm). */
+  normalised: boolean;
+  seconds: number;
+}
+
 export type Request =
   | { id: number; op: "init"; wasmBinary: ArrayBuffer }
   | { id: number; op: "openPlan"; bytes: ArrayBuffer }
   | { id: number; op: "renderPreview" }
   | { id: number; op: "renderRegion"; region: RegionRequest }
   | { id: number; op: "snapTargets" }
-  | { id: number; op: "exportSvg"; options: SvgExportRequest };
+  | { id: number; op: "exportSvg"; options: SvgExportRequest }
+  | { id: number; op: "exportPdf"; options: PdfExportRequest };
 
 /** A Request without its id (distributes over the union). */
 export type RequestBody = Request extends infer R ? (R extends Request ? Omit<R, "id"> : never) : never;

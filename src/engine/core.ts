@@ -2,7 +2,18 @@
 // main thread as a fallback when workers are unavailable from file:// (ADR 0010).
 
 import type * as MuPDF from "mupdf";
-import type { PlanInfo, PageBoxName, Preview, RegionRequest, RegionResult, SvgExportRequest, SvgExportResult } from "./protocol";
+import type {
+  PdfExportRequest,
+  PdfExportResult,
+  PlanInfo,
+  PageBoxName,
+  Preview,
+  RegionRequest,
+  RegionResult,
+  SvgExportRequest,
+  SvgExportResult,
+} from "./protocol";
+import { exportPdf as runPdfExport } from "../export/pdf";
 import type { SnapIndex } from "../ui/snap";
 import { extractSnapTargets } from "./snaptargets";
 import type { Matrix } from "../export/geometry";
@@ -14,6 +25,8 @@ let doc: MuPDF.Document | undefined;
 let list: MuPDF.DisplayList | undefined;
 /** Page bounds origin (pt); the Plan's top-left corner. */
 let origin: [number, number] = [0, 0];
+/** The Plan file as opened; the PDF export works on a fresh copy of it. */
+let planBytes: Uint8Array | undefined;
 
 const PT_TO_MM = 25.4 / 72;
 
@@ -39,6 +52,7 @@ export function openPlan(bytes: ArrayBuffer): PlanInfo {
   list?.destroy();
   list = undefined;
   doc?.destroy();
+  planBytes = new Uint8Array(bytes.slice(0));
   doc = lib().Document.openDocument(new Uint8Array(bytes), "application/pdf");
   const pageCount = doc.countPages();
   const page = doc.loadPage(0);
@@ -122,4 +136,11 @@ export function exportSvg(options: SvgExportRequest): SvgExportResult {
   } finally {
     page.destroy();
   }
+}
+
+export function exportPdf(options: PdfExportRequest): PdfExportResult {
+  if (!planBytes) throw new Error("no Plan open");
+  const t0 = performance.now();
+  const r = runPdfExport(lib(), planBytes, { clip: options.clip, sourceName: options.sourceName, date: new Date() });
+  return { pdf: r.pdf, normalised: r.normalised, seconds: (performance.now() - t0) / 1000 };
 }

@@ -155,6 +155,12 @@ distinct forms. No thin rectangles; plain rectangles are cheap (0.4 MB).
   unknown whether the whiteboard tool suffers more from bytes or from elements: to be compared
   in the whiteboard tool. Pixel-identical in the visual test.
 - Test Plan: repeated signal symbols (filled circle + ring) every 7 rows.
+- **Result in the whiteboard tool (full schedule):** with reuse 7.5 MB / more elements, without
+  9.3 MB. Without reuse ran slightly better, notably when zooming (the team zooms a
+  lot). So element count matters more than bytes for the whiteboard tool; the option was removed
+  from the UI (the library keeps `reuseShapes`, off). The thin-line/text rule barely
+  changed the real Plan (78,786 -> 78,793 short line pieces): what separates them are
+  areas drawn in between, which genuinely cover them.
 
 ## Consequences
 

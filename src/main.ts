@@ -26,7 +26,7 @@ $("engine-status").textContent = "";
 document.body.dataset.engine = engine.mode;
 
 // ---- State ---------------------------------------------------------------
-let plan: { name: string; widthMm: number; heightMm: number } | undefined;
+let plan: { name: string; fileName: string; widthMm: number; heightMm: number } | undefined;
 let clip: ClipMm = { x: 0, y: 0, width: 0, height: 0 };
 let snapIndex: SnapIndex | undefined;
 const snapToggle = $<HTMLInputElement>("snap");
@@ -197,7 +197,12 @@ input.addEventListener("change", async () => {
   try {
     const t0 = performance.now();
     const info = await engine.openPlan(await file.arrayBuffer());
-    plan = { name: file.name.replace(/\.pdf$/i, ""), widthMm: info.widthPt * PT_TO_MM, heightMm: info.heightPt * PT_TO_MM };
+    plan = {
+      name: file.name.replace(/\.pdf$/i, ""),
+      fileName: file.name,
+      widthMm: info.widthPt * PT_TO_MM,
+      heightMm: info.heightPt * PT_TO_MM,
+    };
     showDetails(info);
     const preview = await engine.renderPreview();
     const bitmap = await createImageBitmap(new ImageData(preview.pixels as Uint8ClampedArray<ArrayBuffer>, preview.widthPx, preview.heightPx));
@@ -238,8 +243,7 @@ exportButton.addEventListener("click", async () => {
   exportButton.disabled = true;
   status.textContent = "Wird berechnet…";
   try {
-    const reuseShapes = $<HTMLInputElement>("reuse-shapes").checked;
-    const r = await engine.exportSvg({ clip, mergeMode, textAsPaths, reuseShapes });
+    const r = await engine.exportSvg({ clip, mergeMode, textAsPaths, reuseShapes: false });
     const blob = new Blob([r.svg as BlobPart], { type: "image/svg+xml" });
     const size = blob.size;
 
@@ -281,6 +285,40 @@ exportButton.addEventListener("click", async () => {
   } catch (e) {
     status.textContent = `Export fehlgeschlagen: ${String(e)}`;
   } finally {
+    exportButton.disabled = false;
+  }
+});
+
+// ---- PDF export (for documentation; ADR 0005) -------------------------------
+const pdfButton = $<HTMLButtonElement>("export-pdf");
+pdfButton.addEventListener("click", async () => {
+  if (!plan) return;
+  const status = $("export-status");
+  pdfButton.disabled = true;
+  exportButton.disabled = true;
+  status.textContent = "PDF wird erstellt…";
+  try {
+    const r = await engine.exportPdf({ clip, sourceName: plan.fileName });
+    const blob = new Blob([r.pdf as BlobPart], { type: "application/pdf" });
+    status.replaceChildren();
+    const line = document.createElement("p");
+    line.textContent =
+      `PDF: ${(blob.size / MB).toLocaleString("de-DE", { maximumFractionDigits: 2 })} MB · ` +
+      `${r.seconds.toLocaleString("de-DE", { maximumFractionDigits: 1 })} s · Inhalte außerhalb des Ausschnitts entfernt`;
+    status.append(line);
+    if (!r.normalised) {
+      const p = document.createElement("p");
+      p.className = "warn";
+      p.textContent =
+        "Der Ausschnitt ist länger als 5,08 m. Das PDF behält deshalb den Maßstabsfaktor (UserUnit) des Plans; " +
+        "manche Programme zeigen es dadurch verkleinert an.";
+      status.append(p);
+    }
+    await saveFile(blob, `${plan.name}_Ausschnitt.pdf`, "PDF-Dokument", "application/pdf", ".pdf");
+  } catch (e) {
+    status.textContent = `PDF-Export fehlgeschlagen: ${String(e)}`;
+  } finally {
+    pdfButton.disabled = false;
     exportButton.disabled = false;
   }
 });

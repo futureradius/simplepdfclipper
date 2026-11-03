@@ -3,7 +3,18 @@
 
 import wasmGzBase64 from "virtual:mupdf-wasm";
 import EngineWorker from "./worker?worker&inline";
-import type { PlanInfo, Preview, RegionRequest, RegionResult, RequestBody, Response, SvgExportRequest, SvgExportResult } from "./protocol";
+import type {
+  PdfExportRequest,
+  PdfExportResult,
+  PlanInfo,
+  Preview,
+  RegionRequest,
+  RegionResult,
+  RequestBody,
+  Response,
+  SvgExportRequest,
+  SvgExportResult,
+} from "./protocol";
 import type { SnapIndex } from "../ui/snap";
 
 export type EngineMode = "worker" | "main-thread";
@@ -15,6 +26,7 @@ export interface Engine {
   renderRegion(region: RegionRequest): Promise<RegionResult>;
   snapTargets(): Promise<SnapIndex>;
   exportSvg(options: SvgExportRequest): Promise<SvgExportResult>;
+  exportPdf(options: PdfExportRequest): Promise<PdfExportResult>;
 }
 
 async function decodeWasm(): Promise<ArrayBuffer> {
@@ -81,6 +93,7 @@ function workerEngine(wasm: ArrayBuffer, timeoutMs: number): Promise<Engine> {
           renderRegion: (region) => call<RegionResult>({ op: "renderRegion", region }),
           snapTargets: () => call<SnapIndex>({ op: "snapTargets" }),
           exportSvg: (options) => call<SvgExportResult>({ op: "exportSvg", options }),
+          exportPdf: (options) => call<PdfExportResult>({ op: "exportPdf", options }),
         });
       },
       (e: Error) => {
@@ -102,6 +115,7 @@ async function mainThreadEngine(wasm: ArrayBuffer): Promise<Engine> {
     renderRegion: async (region) => core.renderRegion(region),
     snapTargets: async () => core.snapTargets(),
     exportSvg: async (options) => core.exportSvg(options),
+    exportPdf: async (options) => core.exportPdf(options),
   };
 }
 

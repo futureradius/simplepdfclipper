@@ -31,6 +31,11 @@ scope.onmessage = async (ev: MessageEvent<Request>) => {
         scope.postMessage({ id: req.id, ok: true, result: r } satisfies Response, buffers);
         return;
       }
+      case "exportPdf": {
+        const r = core.exportPdf(req.options);
+        scope.postMessage({ id: req.id, ok: true, result: r } satisfies Response, [r.pdf.buffer]);
+        return;
+      }
       case "exportSvg": {
         const r = core.exportSvg(req.options);
         scope.postMessage({ id: req.id, ok: true, result: r } satisfies Response, [r.svg.buffer]);

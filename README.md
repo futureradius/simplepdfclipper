@@ -17,13 +17,14 @@ double-click. No server, no upload, no installation.
 3. Open your Plan.
 4. Set the Clip: drag its edges in the precision view (they snap to lines; hold Alt
    to place freely), draw it in the overview on the right, or type the mm values.
-5. Export as SVG (for the whiteboard tool).
+5. Export as SVG (for the whiteboard tool) or as PDF (for documentation; everything outside the
+   Clip is removed from the file).
 
 ## Roadmap
 
 - [x] Optimised SVG export (merging, real text, hatching, clip shapes)
 - [x] Precision view with zoom and snapping
-- [ ] PDF export with real removal outside the Clip (ADR 0005)
+- [x] PDF export with real removal outside the Clip (ADR 0005)
 - [ ] Font substitution dialog (ADR 0006)
 - [ ] UI overhaul (the current UI is a functional prototype)
 

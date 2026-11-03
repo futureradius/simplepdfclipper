@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
+import * as mupdf from "mupdf";
 
 const APP = pathToFileURL(resolve("dist/index.html")).href;
 const TEST_PLAN = resolve("samples/test-plan.pdf");
@@ -94,6 +95,20 @@ test("opens from file://, snaps the Clip in the precision view and exports an SV
   expect(svg).toContain('width="1188.9mm" height="600mm"');
   console.log(await page.locator("#export-status").innerText());
 
+
+  // PDF export: page is exactly the Clip, content outside is gone.
+  const pdfDownload = page.waitForEvent("download", { timeout: 120_000 });
+  await page.locator("#export-pdf").click();
+  const pdfFile = await pdfDownload;
+  expect(pdfFile.suggestedFilename()).toBe("test-plan_Ausschnitt.pdf");
+  await expect(page.locator("#export-status")).toContainText("Inhalte außerhalb des Ausschnitts entfernt");
+  const outDoc = mupdf.Document.openDocument(readFileSync(await pdfFile.path()), "application/pdf");
+  const outPage = outDoc.loadPage(0);
+  const [x0, y0, x1, y1] = outPage.getBounds();
+  expect(((x1! - x0!) * 25.4) / 72).toBeCloseTo(1188.9, 1);
+  expect(((y1! - y0!) * 25.4) / 72).toBeCloseTo(600, 1);
+  expect(outPage.toStructuredText("preserve-whitespace").asText()).not.toContain("Bauablaufplan");
+  console.log(await page.locator("#export-status").innerText());
   await page.screenshot({ path: "test-results/app.png" });
   expect(errors).toEqual([]);
 });
