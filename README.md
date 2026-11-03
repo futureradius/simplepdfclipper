@@ -25,7 +25,7 @@ double-click. No server, no upload, no installation.
 - [x] Optimised SVG export (merging, real text, hatching, clip shapes)
 - [x] Precision view with zoom and snapping
 - [x] PDF export with real removal outside the Clip (ADR 0005)
-- [ ] Font substitution dialog (ADR 0006)
+- [ ] ~~Font substitution dialog~~ (not needed so far, ADR 0012)
 - [x] UI overhaul (ADR 0012)
 
 ## Development
