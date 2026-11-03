@@ -6,7 +6,7 @@ Status: accepted (2026-11-03)
 
 - **Priority:** SVG (for the whiteboard tool) is built first. PDF (for project documentation) second;
   both are required.
-- **Size warning:** the export shows the resulting file size. The whiteboard tool recommends imports
+- **Size warning:** the export shows the resulting file size and SVG element count. The whiteboard tool recommends imports
   under 2 MB and rejects files over 45 MB. Above 2 MB the app warns; above 45 MB it
   warns severely and explains the whiteboard tool will reject the file. It **never refuses** to export.
 - **Background:** the exported Clip has a white background. A white rectangle exactly
