@@ -31,6 +31,12 @@ removed, not just hidden.
 A generated stand-in for a real schedule (same size, dense vector lines, bars and
 small text, ~3 MB). Used for development and performance tests. Never committed.
 
+## Why
+
+Our online whiteboard tool shows imported PDFs pixelated. The team discusses the
+schedule in the whiteboard tool, so the main job is: cut the relevant part out of the Plan
+and get it into the whiteboard tool **sharp**, as SVG. PDF export is secondary.
+
 ## Users
 
 The author plus a few non-technical colleagues. The UI must work without explanation:
