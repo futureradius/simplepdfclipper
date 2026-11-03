@@ -1,0 +1,26 @@
+{
+  "name": "simplepdfclipper",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Clip a precise rectangle out of a huge vector PDF and export it as optimised SVG and PDF. Runs fully local in the browser.",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "testplan": "node scripts/make-test-plan.mjs"
+  },
+  "dependencies": {
+    "mupdf": "^1.28.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vite-plugin-singlefile": "^2.3.4",
+    "vitest": "^5.1.0"
+  }
+}
