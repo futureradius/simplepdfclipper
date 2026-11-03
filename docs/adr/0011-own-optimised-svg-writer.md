@@ -112,6 +112,31 @@ was replaced by counting clearly red pixels (hatching, red lines; ~94 % in all
 variants vs. the MuPDF raster), because thin grey lines anti-alias lighter when
 drawn once instead of twice, and Edge renders text lighter than MuPDF.
 
+### Real schedule, full page (user's breakdown, 2026-11-03)
+
+`scripts/svg-breakdown.mjs` on a full schedule export (Ausgewogen, before the changes
+below): 10.8 MB, gzip 1.9 MB. Lines 43 %, filled paths 25 %, images 11 % (22 images,
+1.2 MB), text 10 %, **pattern definitions 1,625 with only 66 distinct contents**
+(~1 MB), clip paths 2,362 (0.35 MB).
+
+Changes:
+
+- **Pattern deduplication** (`dedupePatterns` in `svg.ts`): the schedule has one PDF
+  pattern per hatched area, mostly the same tile with a different origin. Tile
+  content is compared in pattern space (independent of the matrix); repeated content
+  becomes `<pattern xlink:href="#first">` with its own `patternTransform`, and
+  identical content + matrix is merged into one id. Verified at 25 px/mm that the
+  hatch lines of re-used patterns sit exactly where MuPDF draws them.
+- **Image deduplication:** images used more than once are stored once in `<defs>`
+  and placed with `<use>`.
+- `xlink:href` instead of SVG 2 `href` for images (older renderers).
+- **.svgz option** (gzip-compressed SVG, ~5× smaller) in "Erweitert", to test
+  whether the whiteboard tool accepts it. Its docs list SVG but not SVGZ, and its help centre
+  and API docs disagree about SVG itself, so this is tested in practice, not assumed.
+
+The Test Plan now gives every hatch zone its own pattern object (different origin,
+like the real schedule) and places a logo image five times; a test checks both are stored once.
+
 ## Consequences
 
 - More code than using MuPDF's SVG output, but full control over size and text.

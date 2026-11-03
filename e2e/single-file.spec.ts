@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
+import { gunzipSync } from "node:zlib";
 
 const APP = pathToFileURL(resolve("dist/index.html")).href;
 const TEST_PLAN = resolve("samples/test-plan.pdf");
@@ -92,6 +93,17 @@ test("opens from file://, snaps the Clip in the precision view and exports an SV
   await expect(page.locator("#export-status")).toContainText("Elemente");
   const svg = readFileSync(await file.path(), "utf8");
   expect(svg).toContain('width="1188.9mm" height="600mm"');
+  console.log(await page.locator("#export-status").innerText());
+
+  // Compressed variant (.svgz): same SVG, gzip-compressed.
+  await page.locator("summary", { hasText: "Erweitert" }).click();
+  await page.locator("#svgz").check();
+  const download2 = page.waitForEvent("download", { timeout: 120_000 });
+  await page.locator("#export-svg").click();
+  const file2 = await download2;
+  expect(file2.suggestedFilename()).toBe("test-plan_Ausschnitt.svgz");
+  expect(gunzipSync(readFileSync(await file2.path())).toString("utf8")).toBe(svg);
+  await expect(page.locator("#export-status")).toContainText("unkomprimiert");
   console.log(await page.locator("#export-status").innerText());
   await page.screenshot({ path: "test-results/app.png" });
   expect(errors).toEqual([]);

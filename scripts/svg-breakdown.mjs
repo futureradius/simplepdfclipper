@@ -3,9 +3,11 @@
 // Only prints statistics; nothing leaves the machine.
 
 import { readFileSync } from "node:fs";
-import { gzipSync } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
 
-const svg = readFileSync(process.argv[2], "utf8");
+const bytes = readFileSync(process.argv[2]);
+// .svgz files are gzip-compressed (magic bytes 1f 8b)
+const svg = (bytes[0] === 0x1f && bytes[1] === 0x8b ? gunzipSync(bytes) : bytes).toString("utf8");
 const total = Buffer.byteLength(svg);
 const stats = new Map();
 const add = (k, bytes) => {
@@ -43,3 +45,13 @@ for (const m of svg.matchAll(/<pattern id="[^"]+"([^>]*)>([\s\S]*?)<\/pattern>/g
   contents.set(key, (contents.get(key) ?? 0) + 1);
 }
 if (contents.size) console.log(`pattern definitions with content: ${[...contents.values()].reduce((a, b) => a + b, 0)}, distinct contents: ${contents.size}`);
+
+// Images: how many distinct, and how big?
+const hrefs = [...svg.matchAll(/<image [^>]*href="([^"]+)"/g)].map((m) => m[1]);
+if (hrefs.length) {
+  const distinct = new Set(hrefs);
+  const sizes = [...distinct].map((h) => h.length).sort((a, b) => b - a);
+  console.log(`images: ${hrefs.length} embedded, ${distinct.size} distinct, largest ${sizes.slice(0, 5).map((n) => (n / 1e3).toFixed(0) + " kB").join(", ")}`);
+}
+const uses = (svg.match(/<use /g) ?? []).length;
+if (uses) console.log(`image reuses (<use>): ${uses}`);

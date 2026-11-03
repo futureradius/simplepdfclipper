@@ -238,12 +238,15 @@ exportButton.addEventListener("click", async () => {
   try {
     const r = await engine.exportSvg({ clip, mergeMode, textAsPaths });
     const blob = new Blob([r.svg as BlobPart], { type: "image/svg+xml" });
-    const size = blob.size;
+    const svgz = $<HTMLInputElement>("svgz").checked;
+    // .svgz = the same SVG, gzip-compressed (whether the whiteboard tool accepts it is to be tested).
+    const file = svgz ? await new Response(blob.stream().pipeThrough(new CompressionStream("gzip"))).blob() : blob;
+    const size = file.size;
 
     status.replaceChildren();
     const line = document.createElement("p");
     line.textContent =
-      `Größe ${(size / MB).toLocaleString("de-DE", { maximumFractionDigits: 2 })} MB · ` +
+      `Größe ${(size / MB).toLocaleString("de-DE", { maximumFractionDigits: 2 })} MB${svgz ? ` (unkomprimiert ${(blob.size / MB).toLocaleString("de-DE", { maximumFractionDigits: 1 })} MB)` : ""} · ` +
       `${r.elements.toLocaleString("de-DE")} Elemente (aus ${r.sourceItems.toLocaleString("de-DE")} PDF-Objekten) · ` +
       `${r.seconds.toLocaleString("de-DE", { maximumFractionDigits: 1 })} s`;
     status.append(line);
@@ -274,7 +277,8 @@ exportButton.addEventListener("click", async () => {
     resultImg.src = URL.createObjectURL(blob);
     resultImg.hidden = false;
 
-    await saveFile(blob, `${plan.name}_Ausschnitt.svg`, "SVG-Grafik", "image/svg+xml", ".svg");
+    if (svgz) await saveFile(file, `${plan.name}_Ausschnitt.svgz`, "Komprimierte SVG-Grafik", "image/svg+xml", ".svgz");
+    else await saveFile(blob, `${plan.name}_Ausschnitt.svg`, "SVG-Grafik", "image/svg+xml", ".svg");
   } catch (e) {
     status.textContent = `Export fehlgeschlagen: ${String(e)}`;
   } finally {

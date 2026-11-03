@@ -13,6 +13,7 @@ Status: accepted (2026-11-03)
   the size of the Clip is placed at the very back. The Plan's own background is not
   specially detected or removed; it is clipped like everything else.
 - **No text search** in the clipper.
+- **.svgz** (gzip) can be chosen under "Erweitert"; the size shown is the saved file.
 - **Saving:** a "Save as" dialog (File System Access API) with the suggested name
   `<original>_Ausschnitt.<ext>`; falls back to a normal download if unavailable.
 - **PDF provenance:** source file name, export date and Clip coordinates (mm) are

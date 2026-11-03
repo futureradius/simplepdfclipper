@@ -185,18 +185,27 @@ for (let r = 0; r < ROWS; r++) {
 
 // ---- Hatched, slanted closure zones (tiling pattern in a non-rectangular shape)
 // Like the "Sperrungen" in time-distance diagrams: exercises pattern fills and
-// clip paths that are not rectangles.
+// clip paths that are not rectangles. Like the real schedule, every zone gets its own pattern
+// object: same tile, different origin (/Matrix).
+const hatchOrigins = [];
 for (let r = 20; r + 12 < ROWS; r += 97) {
   const y0 = HEADER + r * ROW;
   const y1 = y0 + 12 * ROW;
   const x0 = T0 + Math.floor(rand() * (WEEKS - 60)) * WEEK_W;
   const w = (10 + Math.floor(rand() * 30)) * WEEK_W;
   const slant = 25;
-  ops.push("q /Pattern cs /Hatch scn");
+  hatchOrigins.push([x0 * MM, H - y0 * MM]);
+  ops.push(`q /Pattern cs /H${hatchOrigins.length} scn`);
   ops.push(`${X(x0)} ${Y(y0)} m ${X(x0 + w)} ${Y(y0)} l ${X(x0 + w + slant)} ${Y(y1)} l ${X(x0 + slant)} ${Y(y1)} l h f Q`);
   rgb(0.8, 0, 0, true);
   lw(0.3);
   ops.push(`${X(x0)} ${Y(y0)} m ${X(x0 + w)} ${Y(y0)} l ${X(x0 + w + slant)} ${Y(y1)} l ${X(x0 + slant)} ${Y(y1)} l h S`);
+}
+
+// ---- Logo image, repeated (like a company logo in several title blocks) -----
+for (let r = 0; r < ROWS; r += 600) {
+  const y = HEADER + r * ROW;
+  ops.push(`q ${f(30 * MM)} 0 0 ${f(15 * MM)} ${X(1150)} ${Y(y + 15)} cm /Logo Do Q`);
 }
 
 // ---- "Today" line, dashed -------------------------------------------------
@@ -231,8 +240,32 @@ res.put("Font", fonts);
   const e = cell * 0.25;
   const hatch = `0.8 0 0 RG ${f(0.12 * MM)} w 0 0 m ${f(cell)} ${f(cell)} l S ${f(-e)} ${f(cell - e)} m ${f(e)} ${f(cell + e)} l S ${f(cell - e)} ${f(-e)} m ${f(cell + e)} ${f(e)} l S`;
   const patterns = doc.newDictionary();
-  patterns.put("Hatch", doc.addStream(hatch, dict));
+  hatchOrigins.forEach(([ox, oy], i) => {
+    const d = doc.newDictionary();
+    for (const k of ["Type", "PatternType", "PaintType", "TilingType", "BBox", "XStep", "YStep", "Resources"]) d.put(k, dict.get(k));
+    const m = doc.newArray();
+    for (const v of [1, 0, 0, 1, ox, oy]) m.push(v);
+    d.put("Matrix", m);
+    patterns.put(`H${i + 1}`, doc.addStream(hatch, d));
+  });
   res.put("Pattern", patterns);
+}
+// Logo: a small RGB image with a gradient and a frame.
+{
+  const lw = 120, lh = 60;
+  const pix = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [0, 0, lw, lh], false);
+  const px = pix.getPixels();
+  for (let y = 0; y < lh; y++)
+    for (let x = 0; x < lw; x++) {
+      const i = (y * lw + x) * 3;
+      const frame = x < 3 || y < 3 || x >= lw - 3 || y >= lh - 3;
+      px[i] = frame ? 20 : 30 + (x * 200) / lw;
+      px[i + 1] = frame ? 60 : 90 + (y * 120) / lh;
+      px[i + 2] = frame ? 140 : 200;
+    }
+  const xobjects = doc.newDictionary();
+  xobjects.put("Logo", doc.addImage(new mupdf.Image(pix)));
+  res.put("XObject", xobjects);
 }
 const content = ops.join("\n");
 const pageObj = doc.addPage([0, 0, W, H], 0, res, content);

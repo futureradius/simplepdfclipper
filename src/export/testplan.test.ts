@@ -50,6 +50,23 @@ describe.skipIf(!have)("SVG export on the Test Plan", () => {
     }
   }
 
+  it("stores repeated hatch tiles and images once (full page)", () => {
+    const r = exportSvg(mupdf, page!, {
+      clip: { x: 0, y: 0, width: 1188.9, height: 14270.9 },
+      textAsPaths: false,
+      mergeMode: "balanced",
+    });
+    const withContent = r.svg.match(/<pattern id="[^"]+" patternUnits=/g) ?? [];
+    const references = r.svg.match(/<pattern id="[^"]+" xlink:href=/g) ?? [];
+    const images = r.svg.match(/<image /g) ?? [];
+    const uses = r.svg.match(/<use xlink:href="#i\d+"/g) ?? [];
+    console.log(`patterns with content ${withContent.length}, references ${references.length}, images ${images.length}, uses ${uses.length}`);
+    expect(withContent.length).toBe(1); // 29 zones, each with its own PDF pattern, same tile
+    expect(references.length).toBeGreaterThan(20);
+    expect(images.length).toBe(1); // the logo, placed 5 times
+    expect(uses.length).toBe(5);
+  }, 120_000);
+
   it("writes the measurement table", () => {
     const md = [
       "| Clip | Text | Merge mode | PDF items in Clip | SVG elements | SVG size | Time |",

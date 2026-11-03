@@ -33,25 +33,35 @@ export function toSvg(
     out.push(s);
   };
 
+  const alias = dedupePatterns(patterns);
+  const patternById = new Map(patterns.map((p) => [p.id, p]));
+
   // Only clip regions and patterns that are actually referenced (plus what they depend on).
   const usedClips = new Set<string>();
   const usedPatterns = new Set<string>();
-  const patternById = new Map(patterns.map((p) => [p.id, p]));
+  const imageUses = new Map<string, number>();
   for (const g of groups)
     for (const it of g.items) {
       for (let c = it.clip; c && !usedClips.has(c); c = clips.get(c)?.parent ?? null) usedClips.add(c);
       if (it.kind === "path" && it.fill?.startsWith("url(#")) {
-        let p = patternById.get(it.fill.slice(5, -1));
+        const id = it.fill.slice(5, -1);
+        const canonical = alias.get(id);
+        if (canonical) it.fill = `url(#${canonical})`;
+        let p = patternById.get(canonical ?? id);
         for (; p && !usedPatterns.has(p.id); p = p.base ? patternById.get(p.base) : undefined) usedPatterns.add(p.id);
       }
+      if (it.kind === "image") imageUses.set(it.href, (imageUses.get(it.href) ?? 0) + 1);
     }
-  const xlink = [...usedPatterns].some((id) => patternById.get(id)?.base) ? ' xmlns:xlink="http://www.w3.org/1999/xlink"' : "";
+  // Images used more than once are stored once and placed with <use>.
+  const sharedImages = new Map<string, string>();
+  for (const [href, n] of imageUses) if (n > 1) sharedImages.set(href, `i${sharedImages.size + 1}`);
+  const xlink = ' xmlns:xlink="http://www.w3.org/1999/xlink"';
 
   el(
     `<svg xmlns="http://www.w3.org/2000/svg"${xlink} width="${width / UNITS_PER_MM}mm" height="${height / UNITS_PER_MM}mm" viewBox="0 0 ${width} ${height}">`,
   );
 
-  if (usedClips.size > 0 || usedPatterns.size > 0) {
+  if (usedClips.size > 0 || usedPatterns.size > 0 || sharedImages.size > 0) {
     el("<defs>");
     // Map order is creation order, so parents come before children.
     for (const [id, c] of clips) {
@@ -66,6 +76,8 @@ export function toSvg(
       out.push("</clipPath>");
     }
     for (const p of patterns) if (usedPatterns.has(p.id)) writePattern(p, el, out);
+    for (const [href, id] of sharedImages)
+      el(`<image id="${id}" width="1" height="1" preserveAspectRatio="none" xlink:href="${href}"/>`);
     out.push("</defs>");
   }
 
@@ -77,10 +89,77 @@ export function toSvg(
     const clipAttr = first.clip ? ` clip-path="url(#${first.clip})"` : "";
     if (first.kind === "path") writePath(g.items as PathItem[], clipAttr, el);
     else if (first.kind === "text") writeText(g.items as TextItem[], clipAttr, el, out);
-    else writeImage(first as ImageItem, clipAttr, el);
+    else writeImage(first as ImageItem, clipAttr, el, sharedImages.get((first as ImageItem).href));
   }
   out.push("</svg>");
   return { svg: out.join("\n"), elements };
+}
+
+/**
+ * The schedule contains a separate PDF pattern for every hatched area, mostly with the same
+ * tile but its own origin. Compares tile content in pattern space (independent
+ * of the matrix): repeated content becomes a reference (base) to the first
+ * pattern, and patterns that end up identical including the matrix are merged.
+ * Returns pattern id -> id to use instead. Mutates the pattern list.
+ */
+export function dedupePatterns(patterns: PatternDef[]): Map<string, string> {
+  const byId = new Map(patterns.map((p) => [p.id, p]));
+  const firstWithContent = new Map<string, string>();
+  for (const p of patterns) {
+    if (p.base) continue;
+    const sig = patternSignature(p);
+    if (sig === null) continue;
+    const first = firstWithContent.get(sig);
+    if (first) {
+      p.base = first;
+      p.items = [];
+    } else {
+      firstWithContent.set(sig, p.id);
+    }
+  }
+  // Point every reference at a pattern that holds the content (no chains).
+  const root = (id: string): string => {
+    const p = byId.get(id)!;
+    return p.base ? root(p.base) : p.id;
+  };
+  for (const p of patterns) if (p.base) p.base = root(p.base);
+  // Same content and same matrix: one pattern is enough.
+  const alias = new Map<string, string>();
+  const byKey = new Map<string, string>();
+  for (const p of patterns) {
+    const key = `${p.base ?? p.id}|${p.matrix.map((v) => Math.round(v * 1e5)).join(" ")}`;
+    const first = byKey.get(key);
+    if (first) alias.set(p.id, first);
+    else byKey.set(key, p.id);
+  }
+  return alias;
+}
+
+/** Tile content in pattern space as a string, or null if it cannot be compared. */
+function patternSignature(p: PatternDef): string | null {
+  const inv = invert(p.matrix);
+  const parts = [p.view.x0, p.view.y0, p.view.x1, p.view.y1, p.xstep, p.ystep].map((v) => Math.round(v * 1000)).join(" ");
+  const items: string[] = [];
+  for (const it of p.items) {
+    if (it.kind !== "path") return null;
+    const d: number[] = [];
+    for (let i = 0; i < it.d.length; ) {
+      const op = it.d[i++]!;
+      d.push(op);
+      const n = op === 0 || op === 1 ? 2 : op === 2 ? 6 : 0;
+      for (let k = 0; k < n; k += 2) {
+        const x = it.d[i++]!;
+        const y = it.d[i++]!;
+        d.push(Math.round((x * inv[0] + y * inv[2] + inv[4]) * 1000), Math.round((x * inv[1] + y * inv[3] + inv[5]) * 1000));
+      }
+    }
+    const s = it.strokeStyle;
+    const scale = Math.sqrt(Math.abs(inv[0] * inv[3] - inv[1] * inv[2]));
+    items.push(
+      [it.fill, it.evenOdd, it.stroke, it.alpha, s && Math.round(s.width * scale * 1000), s?.cap, s?.join, s?.dashes?.join(","), d.join(",")].join("|"),
+    );
+  }
+  return `${parts}#${items.join(";")}`;
 }
 
 /**
@@ -162,11 +241,12 @@ function writeText(items: TextItem[], clipAttr: string, el: (s: string) => void,
   if (!single) out.push("</g>");
 }
 
-function writeImage(img: ImageItem, clipAttr: string, el: (s: string) => void): void {
+/** xlink:href (not SVG 2 href) so older renderers and editors understand it. */
+function writeImage(img: ImageItem, clipAttr: string, el: (s: string) => void, sharedId?: string): void {
   const op = img.alpha !== 1 ? ` opacity="${fine(img.alpha)}"` : "";
-  el(
-    `<image width="1" height="1" preserveAspectRatio="none" transform="${matrixFine(img.matrix)}" href="${img.href}"${op}${clipAttr}/>`,
-  );
+  const t = `transform="${matrixFine(img.matrix)}"`;
+  if (sharedId) el(`<use xlink:href="#${sharedId}" ${t}${op}${clipAttr}/>`);
+  else el(`<image width="1" height="1" preserveAspectRatio="none" ${t} xlink:href="${img.href}"${op}${clipAttr}/>`);
 }
 
 /** Image matrices map a unit square, so translation needs no rounding either. */

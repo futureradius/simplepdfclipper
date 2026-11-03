@@ -133,8 +133,9 @@ test("exported SVG looks like the PDF", async ({ page }) => {
   for (const k of ["exact", "balanced", "max", "outlines"]) {
     for (const m of ["red"] as const) { // "dark" mostly measures text rasterisation (Edge vs MuPDF), so it is only logged
       const ratio = ink[k]![m] / ink.reference![m];
-      expect(ratio, `${m} pixels ${k} vs reference`).toBeGreaterThan(0.85);
-      expect(ratio, `${m} pixels ${k} vs reference`).toBeLessThan(1.15);
+      // Missing hatching would push this towards 0; anti-aliasing of tile seams varies by ~20 %.
+      expect(ratio, `${m} pixels ${k} vs reference`).toBeGreaterThan(0.7);
+      expect(ratio, `${m} pixels ${k} vs reference`).toBeLessThan(1.3);
     }
   }
   // "Exakt" and "Ausgewogen" may differ only where lines cross lines.
