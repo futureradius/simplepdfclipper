@@ -10,6 +10,13 @@ Precision comes from three tools:
 2. **Snap** of Clip edges to **Snap targets** in the Plan, with an on/off toggle.
 3. Numeric entry of Clip edges as a fallback.
 
+Details:
+
+- Snap radius is 8 screen pixels, so it feels the same at every zoom level.
+- Snap can be toggled in the UI; holding **Alt** while dragging disables it temporarily.
+- The Clip has drag handles on all edges and corners, plus four number fields
+  (Links, Oben, Breite, Höhe) in mm.
+
 Export is vector only, to PDF and SVG. No raster export.
 
 ## Consequences
