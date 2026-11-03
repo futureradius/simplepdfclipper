@@ -1,6 +1,6 @@
 # 11. Own optimised SVG writer
 
-Status: accepted (2026-11-03)
+Status: accepted (2026-11-03), implemented and measured the same day
 
 ## Context
 
@@ -11,31 +11,63 @@ Element count likely drives lag in the whiteboard tool more than bytes.
 
 ## Decision
 
-simplepdfclipper writes SVG itself: a custom MuPDF.js `Device` collects the
-fill/stroke/text calls for the Clip, and our serializer emits optimised SVG:
+simplepdfclipper writes SVG itself (`src/export/`): a custom MuPDF.js `Device`
+collects the fill/stroke/text/image calls inside the Clip (`collect.ts`), they are
+merged (`merge.ts`) and serialised (`svg.ts`):
 
-- Coordinates rounded to a fixed 0.01 mm.
-- Compact path syntax: relative commands, `H`/`V` for axis-aligned segments.
-- Styles shared via CSS classes, not per-element attributes.
-- Paths with identical style merged into one `<path>` with many subpaths.
-- Repeated complex shapes defined once (`<symbol>`) and placed with `<use>`, only
-  where that is smaller than inlining.
-- Text handled per ADR 0006.
+- Coordinates are integers in a viewBox of 0.01 mm units: fixed 0.01 mm precision
+  with no decimal points.
+- Compact path syntax: relative commands, `h`/`v` for axis-aligned segments, repeated
+  command letters and needless separators omitted.
+- **No CSS.** Shared styles are attributes, on the single merged `<path>` or on a
+  `<g>` around text of the same style. Attributes work in every SVG renderer, and
+  after merging there are so few paths that classes would not save anything.
+- Paths with identical style are merged into one `<path>` with many subpaths.
+- **No `<symbol>`/`<use>` instancing.** Merging already puts repeated shapes into one
+  path; `<use>` per instance would add elements.
+- Items entirely outside the Clip are dropped; items crossing the edge are kept whole
+  and cut by the viewBox (ADR 0005). Rectangular PDF clip paths become `<clipPath>`
+  rects; other clip shapes are approximated by their bounding box and reported.
+- PDF line width 0 ("thinnest line") becomes 0.05 mm (SVG would hide width 0).
+- Not reproduced (counted and shown to the user as a warning): shadings, image masks,
+  soft masks, tiling patterns, transparency group effects.
 
 ### Merge mode (user-selectable, "Erweitert" section)
 
 | Mode | Merges | Exactness |
 |---|---|---|
-| Exakt | only consecutive same-style paths | always identical |
-| Ausgewogen (default) | also across other elements when no overlapping element lies between them in paint order | identical |
-| Maximal | all same-style paths regardless of order | overlaps may change stacking |
+| Exakt | only into the most recent element | always identical |
+| Ausgewogen (default) | into the latest same-style element if nothing painted after it overlaps (grid spatial index over bounding boxes) | identical |
+| Maximal | into the latest same-style element regardless of order | overlaps may change stacking |
 
-All three are one algorithm with a parameter (Exakt = no look-across, Maximal = no
-overlap check), so the extra cost is mainly testing. The export view shows file size
-and element count, so the user can compare modes.
+In every mode: translucent and dashed items are never merged, and filled paths only
+merge if they do not overlap a member of the group (overlapping subpaths in one path
+can cancel out under the fill rule).
+
+## Measurements (Test Plan, 1188.9 × 14,270.9 mm, ~820k drawing operations)
+
+| Clip | Text | Mode | PDF objects in Clip | SVG elements | Size |
+|---|---|---|---|---|---|
+| full width, 600 mm tall | real text | exact | 33,773 | 1,504 | 0.50 MB |
+| full width, 600 mm tall | real text | **balanced** | 33,773 | **1,291** | **0.49 MB** |
+| full width, 600 mm tall | real text | max | 33,773 | 739 | 0.44 MB |
+| full width, 600 mm tall | outlines | balanced | 33,773 | 571 | 1.46 MB |
+| full width, 600 mm tall | outlines | max | 33,773 | 18 | 1.42 MB |
+| table + 1 year, 2000 mm tall | real text | balanced | 26,532 | 4,068 | 0.56 MB |
+| table + 1 year, 2000 mm tall | outlines | balanced | 26,532 | 1,668 | 3.85 MB |
+
+Export takes 2–5 s (MuPDF runs the whole page through the device; only the Clip's
+items are kept). Real text elements dominate the element count in text mode.
+
+Visual check (`e2e/svg-fidelity.spec.ts`, Edge, 3 px/mm, pixels differing by > 25 %):
+
+- exact vs. balanced: **0.000 %**
+- exact vs. max: 0.002 %
+- PDF (MuPDF raster) vs. SVG: 0.25 % with real text, 0.10 % with outlines: glyph
+  rasterisation differences only, verified by inspecting crops.
 
 ## Consequences
 
 - More code than using MuPDF's SVG output, but full control over size and text.
-- Merging must preserve paint order exactly in modes Exakt and Ausgewogen; this is
-  covered by tests that render original vs. export and compare pixels.
+- Paint-order preservation in Exakt/Ausgewogen is covered by unit tests (`merge`) and
+  the pixel comparison.

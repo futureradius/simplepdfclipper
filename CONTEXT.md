@@ -35,8 +35,8 @@ exported page is exactly the Clip at 1:1. Content outside the Clip is actually
 removed, not just hidden.
 
 **Test Plan**
-A generated stand-in for a real schedule (1188 × 7660 mm, an early size estimate; dense vector lines, bars and
-small text, ~3 MB). Used for development and performance tests. Never committed.
+A generated stand-in for a real schedule (1188.9 × 14270.9 mm with UserUnit like the real one; dense vector lines, bars and
+small text, ~4 MB). `npm run testplan`. Used for development, measurements and tests. Never committed.
 
 ## Why
 

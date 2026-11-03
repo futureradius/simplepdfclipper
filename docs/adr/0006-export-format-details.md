@@ -11,13 +11,22 @@ Status: accepted (2026-11-03)
 - **File names:** `<original name>_Ausschnitt.pdf` and `<original name>_Ausschnitt.svg`.
 - **SVG text:** real `<text>` by default. On import the app lists the Plan's fonts
   and proposes a substitute for each (closest-named common Windows font, else Arial);
-  the user can change it. Each text gets
-  `font-family="<original>, <substitute>, Arial, sans-serif"` and its original width
-  via `textLength`, so substitutes keep the layout. Small visual differences between
-  participants' machines are acceptable (all project members use Windows).
-- **"Text als Pfade" checkbox** on export: text as outlines instead, as a fallback.
-  File size and element count of both variants will be measured on the Test Plan and
-  recorded here.
+  the user can change it (dialog not built yet; the automatic choice is used). Each
+  text gets `font-family="<original>,<substitute>,Arial,sans-serif"`. Small visual
+  differences between participants' machines are acceptable (all project members use
+  Windows).
+- **`textLength` only where needed:** for fonts whose substitute is metric-compatible
+  (Helvetica/Arial, Times/Times New Roman, Courier/Courier New) glyph advances are
+  identical, so no width correction is written. Other fonts get
+  `textLength` + `lengthAdjust="spacingAndGlyphs"` with the original run width. This
+  saves ~30 bytes per text for the common Arial case.
+- **Text runs:** consecutive glyphs on one baseline form one `<text>`. A gap of exactly
+  one space width becomes a space character; other gaps start a new `<text>`, so
+  positions stay exact.
+- **"Text als Pfade" checkbox** on export: text as outlines instead (outlines are
+  obtained from MuPDF's own SVG writer, one glyph at a time, and cached). Measured on
+  the Test Plan: outlines are **3–7× larger** (1.5–3.9 MB vs. 0.5–0.6 MB) but have
+  fewer elements. Real text stays the default.
 
 ## Consequences
 

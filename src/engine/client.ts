@@ -3,7 +3,7 @@
 
 import wasmGzBase64 from "virtual:mupdf-wasm";
 import EngineWorker from "./worker?worker&inline";
-import type { PlanInfo, Preview, RequestBody, Response } from "./protocol";
+import type { PlanInfo, Preview, RequestBody, Response, SvgExportRequest, SvgExportResult } from "./protocol";
 
 export type EngineMode = "worker" | "main-thread";
 
@@ -11,6 +11,7 @@ export interface Engine {
   mode: EngineMode;
   openPlan(bytes: ArrayBuffer): Promise<PlanInfo>;
   renderPreview(): Promise<Preview>;
+  exportSvg(options: SvgExportRequest): Promise<SvgExportResult>;
 }
 
 async function decodeWasm(): Promise<ArrayBuffer> {
@@ -74,6 +75,7 @@ function workerEngine(wasm: ArrayBuffer, timeoutMs: number): Promise<Engine> {
           mode: "worker",
           openPlan: (bytes) => call<PlanInfo>({ op: "openPlan", bytes }, [bytes]),
           renderPreview: () => call<Preview>({ op: "renderPreview" }),
+          exportSvg: (options) => call<SvgExportResult>({ op: "exportSvg", options }),
         });
       },
       (e: Error) => {
@@ -92,6 +94,7 @@ async function mainThreadEngine(wasm: ArrayBuffer): Promise<Engine> {
     mode: "main-thread",
     openPlan: async (bytes) => core.openPlan(bytes),
     renderPreview: async () => core.renderPreview(),
+    exportSvg: async (options) => core.exportSvg(options),
   };
 }
 

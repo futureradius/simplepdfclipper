@@ -20,6 +20,11 @@ scope.onmessage = async (ev: MessageEvent<Request>) => {
         scope.postMessage({ id: req.id, ok: true, result: preview } satisfies Response, [preview.png.buffer]);
         return;
       }
+      case "exportSvg": {
+        const r = core.exportSvg(req.options);
+        scope.postMessage({ id: req.id, ok: true, result: r } satisfies Response, [r.svg.buffer]);
+        return;
+      }
     }
     scope.postMessage({ id: req.id, ok: true, result } satisfies Response);
   } catch (e) {

@@ -2,7 +2,8 @@
 // main thread as a fallback when workers are unavailable from file:// (ADR 0010).
 
 import type * as MuPDF from "mupdf";
-import type { PlanInfo, PageBoxName, Preview } from "./protocol";
+import type { PlanInfo, PageBoxName, Preview, SvgExportRequest, SvgExportResult } from "./protocol";
+import { exportSvg as runSvgExport } from "../export/index";
 
 let mupdf: typeof MuPDF | undefined;
 let doc: MuPDF.Document | undefined;
@@ -64,4 +65,21 @@ export function renderPreview(): Preview {
   pix.destroy();
   page.destroy();
   return result;
+}
+
+export function exportSvg(options: SvgExportRequest): SvgExportResult {
+  const t0 = performance.now();
+  const page = openDoc().loadPage(0);
+  try {
+    const r = runSvgExport(lib(), page, options);
+    return {
+      svg: new TextEncoder().encode(r.svg),
+      elements: r.elements,
+      sourceItems: r.sourceItems,
+      unsupported: r.unsupported,
+      seconds: (performance.now() - t0) / 1000,
+    };
+  } finally {
+    page.destroy();
+  }
 }

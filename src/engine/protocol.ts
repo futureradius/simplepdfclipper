@@ -1,5 +1,7 @@
 // Messages between the UI and the engine (worker or in-thread fallback).
 
+import type { ClipMm, MergeMode } from "../export/index";
+
 export type PageBoxName = "MediaBox" | "CropBox" | "BleedBox" | "TrimBox" | "ArtBox";
 
 export interface PlanInfo {
@@ -19,10 +21,26 @@ export interface Preview {
   heightPx: number;
 }
 
+export interface SvgExportRequest {
+  clip: ClipMm;
+  mergeMode: MergeMode;
+  textAsPaths: boolean;
+}
+
+export interface SvgExportResult {
+  /** UTF-8 encoded SVG. */
+  svg: Uint8Array;
+  elements: number;
+  sourceItems: number;
+  unsupported: Record<string, number>;
+  seconds: number;
+}
+
 export type Request =
   | { id: number; op: "init"; wasmBinary: ArrayBuffer }
   | { id: number; op: "openPlan"; bytes: ArrayBuffer }
-  | { id: number; op: "renderPreview" };
+  | { id: number; op: "renderPreview" }
+  | { id: number; op: "exportSvg"; options: SvgExportRequest };
 
 /** A Request without its id (distributes over the union). */
 export type RequestBody = Request extends infer R ? (R extends Request ? Omit<R, "id"> : never) : never;

@@ -5,14 +5,31 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>simplepdfclipper</title>
     <style>
+      :root { --accent: #d4145a; --line: #ccc; --muted: #666; }
       body { font: 14px/1.4 "Segoe UI", Arial, sans-serif; margin: 16px; background: #f4f4f4; color: #222; }
       header { display: flex; gap: 12px; align-items: baseline; margin-bottom: 8px; }
-      #version { color: #777; font-size: 12px; }
-      .note { background: #fff8d6; border: 1px solid #e6d27a; padding: 6px 10px; display: inline-block; }
-      table { border-collapse: collapse; margin: 8px 0; background: #fff; }
-      td, th { border: 1px solid #ccc; padding: 3px 8px; text-align: left; }
-      #preview-wrap { max-height: 70vh; overflow: auto; border: 1px solid #ccc; background: #fff; display: inline-block; }
-      #preview { display: block; }
+      #version { color: #888; font-size: 12px; }
+      .note { background: #fff8d6; border: 1px solid #e6d27a; padding: 6px 10px; display: inline-block; margin: 4px 0; }
+      .layout { display: flex; gap: 24px; align-items: flex-start; }
+      .panel { background: #fff; border: 1px solid var(--line); padding: 12px 14px; flex: 0 0 340px; box-sizing: border-box; position: sticky; top: 16px; overflow-wrap: anywhere; }
+      .panel h2 { font-size: 15px; margin: 0 0 8px; }
+      .fields { display: grid; grid-template-columns: auto 1fr auto; gap: 6px 8px; align-items: center; }
+      .fields input { width: 110px; font: inherit; padding: 2px 4px; }
+      details { margin: 10px 0; }
+      details label { display: block; margin: 4px 0; }
+      button { font: inherit; padding: 6px 14px; cursor: pointer; }
+      button.primary { background: #1f5fae; color: #fff; border: 1px solid #174a87; border-radius: 3px; }
+      button:disabled { opacity: .5; cursor: default; }
+      .muted { color: var(--muted); font-size: 12px; }
+      .warn { background: #fff1d6; border: 1px solid #e0a940; padding: 6px 8px; margin-top: 8px; }
+      .severe { background: #ffe0e0; border: 1px solid #d33; padding: 6px 8px; margin-top: 8px; font-weight: 600; }
+      table.details { border-collapse: collapse; margin: 8px 0; }
+      table.details td, table.details th { border: 1px solid var(--line); padding: 2px 8px; text-align: left; font-size: 12px; }
+      #preview-wrap { position: relative; max-height: 80vh; overflow: auto; border: 1px solid var(--line); background: #fff; display: inline-block; cursor: crosshair; user-select: none; }
+      #preview { display: block; pointer-events: none; }
+      #clip-box { position: absolute; border: 2px solid var(--accent); background: rgba(212, 20, 90, .08); pointer-events: none; box-sizing: border-box; }
+      #result-wrap { margin-top: 10px; max-height: 50vh; overflow: auto; border: 1px solid var(--line); background: #fff; }
+      #result-img { display: block; max-width: 100%; }
     </style>
   </head>
   <body>
@@ -20,12 +37,47 @@
       <strong>simplepdfclipper</strong>
       <span id="version"></span>
     </header>
-    <p class="note">Frühe Entwicklungsversion: Plan öffnen und prüfen. Ausschnitt und Export folgen.</p>
+    <p class="note">Entwicklungsversion: Ausschnitt per Ziehen in der Übersicht oder über die mm-Felder wählen. Präzise Ansicht mit Zoom und Einrasten folgt.</p>
     <p id="engine-status">PDF-Engine wird geladen…</p>
     <label>Plan öffnen: <input id="file" type="file" accept="application/pdf,.pdf" disabled /></label>
     <p id="plan-info"></p>
-    <table id="plan-details" hidden></table>
-    <div id="preview-wrap" hidden><img id="preview" alt="Vorschau des Plans" /></div>
+
+    <div class="layout" id="workspace" hidden>
+
+      <div class="panel">
+        <h2>Ausschnitt (mm)</h2>
+        <div class="fields">
+          <label for="clip-x">Links</label><input id="clip-x" type="number" step="0.1" min="0" /><span class="muted">mm</span>
+          <label for="clip-y">Oben</label><input id="clip-y" type="number" step="0.1" min="0" /><span class="muted">mm</span>
+          <label for="clip-w">Breite</label><input id="clip-w" type="number" step="0.1" min="1" /><span class="muted">mm</span>
+          <label for="clip-h">Höhe</label><input id="clip-h" type="number" step="0.1" min="1" /><span class="muted">mm</span>
+        </div>
+        <p class="muted" id="clip-note"></p>
+
+        <label><input id="text-paths" type="checkbox" /> Text als Pfade</label>
+        <details>
+          <summary>Erweitert</summary>
+          <div>Zusammenfassen gleicher Linien:</div>
+          <label><input type="radio" name="merge" value="exact" /> Exakt</label>
+          <label><input type="radio" name="merge" value="balanced" checked /> Ausgewogen (Standard)</label>
+          <label><input type="radio" name="merge" value="max" /> Maximal <span class="muted">(kleinste Datei, Überlappungen können sich ändern)</span></label>
+        </details>
+
+        <button class="primary" id="export-svg">SVG exportieren</button>
+        <div id="export-status"></div>
+
+        <details>
+          <summary>Plan-Details</summary>
+          <table class="details" id="plan-details"></table>
+        </details>
+      </div>
+      <div id="preview-wrap"><img id="preview" alt="Übersicht des Plans" /><div id="clip-box"></div></div>
+    </div>
+
+    <div id="result" hidden>
+      <h2 style="font-size: 15px">Ergebnis</h2>
+      <div id="result-wrap"><img id="result-img" alt="Exportiertes SVG" /></div>
+    </div>
     <script type="module" src="./src/main.ts"></script>
   </body>
 </html>

@@ -1,5 +1,6 @@
 // Generates a stand-in for a real schedule ("Test Plan", see CONTEXT.md):
-// one page, 1188 x 7660 mm, vector lines, bars, milestones and small text.
+// one page, 1188.9 x 14270.9 mm, vector lines, bars, milestones and small text.
+// Like the real schedule, it sets /UserUnit so the long side is exactly 14,400 PDF units.
 // Output: samples/test-plan.pdf (git-ignored).
 //
 // Like many schedule exporters, it draws the grid verbosely (per cell, per row
@@ -8,9 +9,11 @@
 import * as mupdf from "mupdf";
 import { mkdirSync, writeFileSync } from "node:fs";
 
-const MM = 72 / 25.4;
-const W_MM = 1188;
-const H_MM = 7660;
+const W_MM = 1188.9;
+const H_MM = 14270.9;
+const MAX_UNITS = 14400; // PDF page size limit per side
+const USER_UNIT = (H_MM / 25.4) * 72 / MAX_UNITS; // 2.8092..., same as the real schedule
+const MM = 72 / 25.4 / USER_UNIT; // PDF units per mm
 const W = W_MM * MM;
 const H = H_MM * MM;
 
@@ -37,7 +40,7 @@ function pdfStr(s) {
 
 const ops = [];
 const text = (font, sizePt, xmm, ymm, s) =>
-  ops.push(`BT /${font} ${f(sizePt)} Tf 1 0 0 1 ${X(xmm)} ${Y(ymm)} Tm ${pdfStr(s)} Tj ET`);
+  ops.push(`BT /${font} ${f(sizePt / USER_UNIT)} Tf 1 0 0 1 ${X(xmm)} ${Y(ymm)} Tm ${pdfStr(s)} Tj ET`);
 const line = (x1, y1, x2, y2) => ops.push(`${X(x1)} ${Y(y1)} m ${X(x2)} ${Y(y2)} l S`);
 const rectStroke = (x, y, w, h) => ops.push(`${X(x)} ${Y(y + h)} ${f(w * MM)} ${f(h * MM)} re S`);
 const rectFill = (x, y, w, h) => ops.push(`${X(x)} ${Y(y + h)} ${f(w * MM)} ${f(h * MM)} re f`);
@@ -196,12 +199,14 @@ fonts.put("F2", doc.addSimpleFont(new mupdf.Font("Helvetica-Bold"), "Latin"));
 const res = doc.newDictionary();
 res.put("Font", fonts);
 const content = ops.join("\n");
-doc.insertPage(-1, doc.addPage([0, 0, W, H], 0, res, content));
+const pageObj = doc.addPage([0, 0, W, H], 0, res, content);
+pageObj.put("UserUnit", USER_UNIT);
+doc.insertPage(-1, pageObj);
 
 mkdirSync("samples", { recursive: true });
 const out = doc.saveToBuffer("compress,garbage").asUint8Array();
 writeFileSync("samples/test-plan.pdf", out);
 console.log(
-  `samples/test-plan.pdf: ${(out.length / 1e6).toFixed(2)} MB, ${W_MM} x ${H_MM} mm, ` +
+  `samples/test-plan.pdf: ${(out.length / 1e6).toFixed(2)} MB, ${W_MM} x ${H_MM} mm, UserUnit ${USER_UNIT}, ` +
     `${ROWS} rows, ${ops.length} drawing ops, content ${(content.length / 1e6).toFixed(1)} MB uncompressed`,
 );
