@@ -109,6 +109,7 @@ $("zoom-in").addEventListener("click", () => viewer.zoomBy(1.5));
 $("zoom-out").addEventListener("click", () => viewer.zoomBy(1 / 1.5));
 $("zoom-100").addEventListener("click", () => viewer.zoomTo100());
 $("zoom-clip").addEventListener("click", () => viewer.fitClip());
+$("zoom-width").addEventListener("click", () => viewer.fitWidth(viewer.visible().y0));
 
 // ---- Overview (navigator) --------------------------------------------------
 const overview = $("overview");
@@ -210,7 +211,8 @@ input.addEventListener("change", async () => {
     const stored = loadStoredClip();
     const fits = stored && stored.x + stored.width <= plan.widthMm + 0.05 && stored.y + stored.height <= plan.heightMm + 0.05;
     setClip(fits ? stored : { x: 0, y: 0, width: plan.widthMm, height: Math.min(600, plan.heightMm) });
-    viewer.fitClip();
+    // Start with the Plan's full width, scrolled to the Clip.
+    viewer.fitWidth(clip.y);
 
     const secs = ((performance.now() - t0) / 1000).toFixed(1);
     $("plan-info").textContent = `${file.name}: ${fmt(plan.widthMm)} × ${fmt(plan.heightMm)} mm (geladen in ${secs} s)`;
@@ -238,15 +240,12 @@ exportButton.addEventListener("click", async () => {
   try {
     const r = await engine.exportSvg({ clip, mergeMode, textAsPaths });
     const blob = new Blob([r.svg as BlobPart], { type: "image/svg+xml" });
-    const svgz = $<HTMLInputElement>("svgz").checked;
-    // .svgz = the same SVG, gzip-compressed (whether the whiteboard tool accepts it is to be tested).
-    const file = svgz ? await new Response(blob.stream().pipeThrough(new CompressionStream("gzip"))).blob() : blob;
-    const size = file.size;
+    const size = blob.size;
 
     status.replaceChildren();
     const line = document.createElement("p");
     line.textContent =
-      `Größe ${(size / MB).toLocaleString("de-DE", { maximumFractionDigits: 2 })} MB${svgz ? ` (unkomprimiert ${(blob.size / MB).toLocaleString("de-DE", { maximumFractionDigits: 1 })} MB)` : ""} · ` +
+      `Größe ${(size / MB).toLocaleString("de-DE", { maximumFractionDigits: 2 })} MB · ` +
       `${r.elements.toLocaleString("de-DE")} Elemente (aus ${r.sourceItems.toLocaleString("de-DE")} PDF-Objekten) · ` +
       `${r.seconds.toLocaleString("de-DE", { maximumFractionDigits: 1 })} s`;
     status.append(line);
@@ -277,8 +276,7 @@ exportButton.addEventListener("click", async () => {
     resultImg.src = URL.createObjectURL(blob);
     resultImg.hidden = false;
 
-    if (svgz) await saveFile(file, `${plan.name}_Ausschnitt.svgz`, "Komprimierte SVG-Grafik", "image/svg+xml", ".svgz");
-    else await saveFile(blob, `${plan.name}_Ausschnitt.svg`, "SVG-Grafik", "image/svg+xml", ".svg");
+    await saveFile(blob, `${plan.name}_Ausschnitt.svg`, "SVG-Grafik", "image/svg+xml", ".svg");
   } catch (e) {
     status.textContent = `Export fehlgeschlagen: ${String(e)}`;
   } finally {

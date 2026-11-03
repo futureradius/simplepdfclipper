@@ -113,6 +113,15 @@ export class Viewer {
     this.viewUpdated();
   }
 
+  /** Fit the Plan's width into the view, with `topMm` near the top edge. */
+  fitWidth(topMm = 0): void {
+    this.zoom = clamp(this.cssW / (this.plan.width * 1.02), MIN_ZOOM, MAX_ZOOM);
+    this.cx = this.plan.width / 2;
+    const halfH = this.cssH / 2 / this.zoom;
+    this.cy = Math.max(Math.min(topMm, this.plan.height) - 0.03 * 2 * halfH + halfH, halfH * 0.98);
+    this.viewUpdated();
+  }
+
   centerOn(p: Point): void {
     this.cx = p.x;
     this.cy = p.y;

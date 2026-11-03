@@ -55,3 +55,78 @@ if (hrefs.length) {
 }
 const uses = (svg.match(/<use /g) ?? []).length;
 if (uses) console.log(`image reuses (<use>): ${uses}`);
+
+// ---- Geometry of filled areas and lines (counts only, no coordinates) -------
+// Parses the compact relative path syntax written by simplepdfclipper.
+function subpathsOf(d) {
+  const tokens = d.match(/[a-zA-Z]|-?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?/g) ?? [];
+  const subs = [];
+  let cur = null;
+  let cmd = "";
+  let i = 0;
+  const arity = { m: 2, l: 2, h: 1, v: 1, c: 6, z: 0 };
+  while (i < tokens.length) {
+    if (/[a-zA-Z]/.test(tokens[i])) cmd = tokens[i++];
+    const c = cmd.toLowerCase();
+    if (c === "z") { if (cur) cur.cmds.push("z"); continue; }
+    const args = tokens.slice(i, i + arity[c]).map(Number);
+    i += arity[c];
+    if (c === "m") {
+      cur = { cmds: [], args: [], src: "" };
+      subs.push(cur);
+      cmd = "l"; // implicit repeats after m are lines
+      continue;
+    }
+    cur?.cmds.push(c);
+    cur?.args.push(...args);
+  }
+  return subs;
+}
+
+function classify(s) {
+  const kinds = new Set(s.cmds.filter((c) => c !== "z"));
+  if (kinds.has("c")) return "curves";
+  if (kinds.has("l")) return "straight, diagonal";
+  const closed = s.cmds.includes("z");
+  const segs = s.cmds.filter((c) => c !== "z").length;
+  if (closed && segs <= 4 && segs >= 3) {
+    // rectangle: h/v alternating; thin if the short side is < 0.5 mm (50 units)
+    const sides = s.args.map(Math.abs).filter((v) => v > 0);
+    return Math.min(...sides) < 50 ? "thin rectangle (< 0.5 mm)" : "rectangle";
+  }
+  return "axis-parallel, other";
+}
+
+for (const kind of ["fill", "stroke"]) {
+  const re = kind === "fill"
+    ? /<path d="([^"]*)" fill="#[^>]*>/g // solid fills only (not clip shapes or pattern fills)
+    : /<path d="([^"]*)"[^>]*fill="none"[^>]*>/g;
+  const classes = new Map();
+  const shapes = new Map();
+  let subTotal = 0;
+  for (const m of svg.matchAll(re)) {
+    const d = m[1];
+    // split the original text at m commands to measure bytes per subpath
+    const pieces = d.split(/(?=m)/);
+    const subs = subpathsOf(d);
+    subs.forEach((s, k) => {
+      const bytes = (pieces[k] ?? "").length;
+      const cls = classify(s);
+      const c = classes.get(cls) ?? { n: 0, bytes: 0, segs: 0 };
+      c.n++;
+      c.bytes += bytes;
+      c.segs += s.cmds.length;
+      classes.set(cls, c);
+      const sig = s.cmds.join("") + s.args.join(",");
+      shapes.set(sig, (shapes.get(sig) ?? 0) + 1);
+      subTotal++;
+    });
+  }
+  if (!subTotal) continue;
+  console.log(`\n${kind === "fill" ? "filled areas" : "lines"}: ${subTotal} shapes`);
+  for (const [cls, c] of [...classes].sort((a, b) => b[1].bytes - a[1].bytes))
+    console.log(`  ${cls.padEnd(28)} ${String(c.n).padStart(7)} × ${(c.bytes / 1e6).toFixed(2).padStart(5)} MB, avg ${(c.segs / c.n).toFixed(1)} segments`);
+  const repeats = [...shapes.values()].filter((n) => n > 1);
+  const repeatedInstances = repeats.reduce((a, b) => a + b, 0);
+  console.log(`  identical shapes (same form, any position): ${repeats.length} forms used ${repeatedInstances} times in total`);
+}

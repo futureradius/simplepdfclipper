@@ -75,7 +75,6 @@
           <label><input type="radio" name="merge" value="exact" /> Exakt</label>
           <label><input type="radio" name="merge" value="balanced" checked /> Ausgewogen (Standard)</label>
           <label><input type="radio" name="merge" value="max" /> Maximal <span class="muted">(kleinste Datei; Flächen können über oder unter Linien rutschen, Ergebnis prüfen)</span></label>
-          <label class="check" style="margin-top:10px"><input id="svgz" type="checkbox" /> Komprimiert speichern (.svgz) <span class="muted">(etwa 5× kleiner; zum Testen, ob das Whiteboard-Tool das annimmt)</span></label>
         </details>
         <button class="primary" id="export-svg">SVG exportieren</button>
         <div id="export-status"></div>
@@ -94,6 +93,7 @@
           <span id="zoom-label"></span>
           <button id="zoom-in" title="Vergrößern">+</button>
           <button id="zoom-100" title="Originalgröße">1:1</button>
+          <button id="zoom-width" title="Ganze Planbreite zeigen">Planbreite</button>
           <button id="zoom-clip" title="Ganzen Ausschnitt zeigen">Ausschnitt zeigen</button>
         </div>
       </div>
