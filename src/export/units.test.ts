@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { encodePath, parseGlyphPath } from "./pathdata";
 import { familyOf, fontStyleFor } from "./fonts";
 import { mergeItems } from "./merge";
+import { splitAtWhitespace } from "./collect";
 import { Op, type PathItem, type TextItem } from "./ir";
 import type { Rect } from "./geometry";
 
@@ -39,12 +40,50 @@ describe("fonts", () => {
     expect(familyOf("Helvetica")).toBe("Helvetica");
   });
 
+  it("understands localised Windows style names (schedule PDFs use 'Arial Standard' / 'Arial Fett')", () => {
+    expect(familyOf("Arial Standard")).toBe("Arial");
+    expect(familyOf("ArialStandard")).toBe("Arial");
+    expect(familyOf("Arial Fett")).toBe("Arial");
+    expect(familyOf("Arial Fett Kursiv")).toBe("Arial");
+    expect(familyOf("Arial Schmal")).toBe("Arial Narrow");
+    expect(familyOf("Times New Roman")).toBe("Times New Roman");
+    expect(familyOf("Arial Black")).toBe("Arial Black"); // a family of its own, much wider
+    const fett = fontStyleFor({ name: "Arial Fett", bold: false, italic: false, serif: false, mono: false });
+    expect(fett).toEqual({ family: "Arial,sans-serif", bold: true, italic: false, metricCompatible: true });
+    const std = fontStyleFor({ name: "Arial Standard", bold: false, italic: false, serif: false, mono: false });
+    expect(std.metricCompatible).toBe(true);
+  });
+
   it("marks Helvetica/Arial as metric-compatible and lists fallbacks", () => {
     const s = fontStyleFor({ name: "Helvetica-Bold", bold: false, italic: false, serif: false, mono: false });
     expect(s).toEqual({ family: "Helvetica,Arial,sans-serif", bold: true, italic: false, metricCompatible: true });
     const u = fontStyleFor({ name: "XYZABC+PDFSpecial", bold: false, italic: false, serif: false, mono: false });
     expect(u.family).toBe("PDFSpecial,Arial,sans-serif");
     expect(u.metricCompatible).toBe(false);
+  });
+});
+
+describe("splitAtWhitespace", () => {
+  const glyphs = (s: string) => [...s].map((ch) => ({ uni: ch.codePointAt(0)!, ch }));
+  const text = (pieces: { ch: string }[][]) => pieces.map((p) => p.map((g) => g.ch).join(""));
+
+  it("trims spaces at the edges (they would be dropped and the rest stretched)", () => {
+    expect(text(splitAtWhitespace(glyphs(" Bahnwagen ")))).toEqual(["Bahnwagen"]);
+    expect(text(splitAtWhitespace(glyphs(" 10")))).toEqual(["10"]);
+  });
+
+  it("keeps single inner spaces and splits at multiple spaces", () => {
+    expect(text(splitAtWhitespace(glyphs("auf Bahnwagen AG")))).toEqual(["auf Bahnwagen AG"]);
+    expect(text(splitAtWhitespace(glyphs("Mo.  14.09.2026")))).toEqual(["Mo.", "14.09.2026"]);
+  });
+
+  it("counts an inserted gap-space together with a space glyph", () => {
+    const g = glyphs("a b").map((x, i) => (i === 2 ? { ...x, spaceBefore: true } : x));
+    expect(text(splitAtWhitespace(g))).toEqual(["a", "b"]);
+  });
+
+  it("drops runs that are only whitespace", () => {
+    expect(splitAtWhitespace(glyphs("   "))).toEqual([]);
   });
 });
 

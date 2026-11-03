@@ -47,7 +47,7 @@ test("exported SVG looks like the PDF", async ({ page }) => {
     outlines: `data:image/svg+xml;base64,${Buffer.from(outlines).toString("base64")}`,
   };
 
-  const result = await page.evaluate(
+  const { out: result, ink } = await page.evaluate(
     async ({ images, w, h, pairs }) => {
       const load = (src: string) =>
         new Promise<ImageData>((resolve, reject) => {
@@ -67,6 +67,12 @@ test("exported SVG looks like the PDF", async ({ page }) => {
         });
       const data: Record<string, ImageData> = {};
       for (const [k, v] of Object.entries(images)) data[k] = await load(v);
+      const ink: Record<string, number> = {};
+      for (const [k, v] of Object.entries(data)) {
+        let n = 0;
+        for (let i = 0; i < v.data.length; i += 4) if (Math.min(v.data[i]!, v.data[i + 1]!, v.data[i + 2]!) < 200) n++;
+        ink[k] = n;
+      }
       const out: Record<string, { diffShare: number; diffPng: string }> = {};
       for (const [a, b] of pairs) {
         const A = data[a]!.data;
@@ -91,7 +97,7 @@ test("exported SVG looks like the PDF", async ({ page }) => {
         ctx.putImageData(diff, 0, 0);
         out[`${a}-vs-${b}`] = { diffShare: n / (w * h), diffPng: c.toDataURL("image/png") };
       }
-      return out;
+      return { out, ink };
     },
     {
       images,
@@ -113,8 +119,16 @@ test("exported SVG looks like the PDF", async ({ page }) => {
     console.log(`${name}: ${(r.diffShare * 100).toFixed(3)} % of pixels differ`);
   }
 
+  for (const [k, n] of Object.entries(ink)) console.log(`ink ${k}: ${n}`);
+  // Nothing may go missing: e.g. hatched areas (tiling patterns) must be there.
+  expect(svgs.balanced).toContain("<pattern");
+  for (const k of ["exact", "balanced", "outlines"]) {
+    const ratio = ink[k]! / ink.reference!;
+    expect(ratio, `ink ${k} vs reference`).toBeGreaterThan(0.93);
+    expect(ratio, `ink ${k} vs reference`).toBeLessThan(1.07);
+  }
   // Merging in "exact" and "balanced" must not change the picture.
   expect(result["exact-vs-balanced"]!.diffShare).toBeLessThan(0.0005);
   // The SVG must look like the PDF (allowing for font rasterisation differences).
-  expect(result["reference-vs-exact"]!.diffShare).toBeLessThan(0.02);
+  expect(result["reference-vs-exact"]!.diffShare).toBeLessThan(0.01);
 });

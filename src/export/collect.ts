@@ -20,7 +20,18 @@ import {
 } from "./geometry";
 import { fontStyleFor } from "./fonts";
 import { GlyphOutlines } from "./glyphs";
-import { Op, UNITS_PER_MM, type Collected, type FontStyle, type Item, type PathData, type StrokeStyle } from "./ir";
+import {
+  Op,
+  UNITS_PER_MM,
+  type ClipDef,
+  type Collected,
+  type FontStyle,
+  type Item,
+  type PathData,
+  type PatternDef,
+  type StrokeStyle,
+} from "./ir";
+import { encodePath } from "./pathdata";
 
 export interface ClipMm {
   x: number;
@@ -126,6 +137,8 @@ interface Glyph {
   gid: number;
   uni: number;
   adv: number; // advance in em
+  /** Set when a space-width gap precedes this glyph (a space is inserted). */
+  spaceBefore?: boolean;
 }
 
 function glyphBox(g: Glyph): Rect {
@@ -148,32 +161,68 @@ export function collect(mupdf: typeof MuPDF, page: MuPDF.Page, opts: CollectOpti
   ];
 
   const items: Item[] = [];
-  const clips = new Map<string, Rect>();
+  /** Where drawing calls go: the page, or the pattern tile being recorded. */
+  let sink: Item[] = items;
+  let pageSink: Item[] = items;
+  const clips = new Map<string, ClipDef>();
+  const clipIds = new Map<string, string>();
+  const patterns: PatternDef[] = [];
+  const patternIds = new Map<string, string>();
   const unsupported: Record<string, number> = {};
   const warn = (what: string) => (unsupported[what] = (unsupported[what] ?? 0) + 1);
 
-  // Clip stack: each entry is the effective visible rect (already intersected).
-  const clipStack: { rect: Rect; id: string | null }[] = [{ rect: area, id: null }];
+  // Clip stack. rect: visible bounds (intersected); id: SVG clip to apply;
+  // exact: the whole chain consists of rectangles, so rect is the exact region.
+  const clipStack: { rect: Rect; id: string | null; exact: boolean }[] = [{ rect: area, id: null, exact: true }];
   const top = () => clipStack[clipStack.length - 1]!;
-  let suppress = 0; // inside mask definitions / tiling patterns: draw nothing
+  let suppress = 0; // inside mask definitions / skipped tiles: draw nothing
+  let recording = 0; // inside a pattern tile being recorded
+  const tileStack: ("record" | "skip")[] = [];
 
-  const pushClip = (r: Rect) => {
-    const rect = intersect(top().rect, r);
-    let id: string | null = null;
-    if (!contains(rect, area)) {
-      const key = [rect.x0, rect.y0, rect.x1, rect.y1].map(Math.round).join(",");
-      id = `c${key}`;
-      if (!clips.has(id)) clips.set(id, rect);
+  const clipId = (key: string, def: ClipDef) => {
+    let id = clipIds.get(key);
+    if (!id) {
+      id = "c" + (clipIds.size + 1);
+      clipIds.set(key, id);
+      clips.set(id, def);
     }
-    clipStack.push({ rect, id });
+    return id;
+  };
+
+  const pushRectClip = (r: Rect) => {
+    const t = top();
+    // Clips inside pattern tiles are not reproduced; no-op clips need no SVG.
+    if (recording || contains(r, t.rect)) {
+      clipStack.push({ ...t });
+      return;
+    }
+    const rect = intersect(t.rect, r);
+    const def: ClipDef = t.exact
+      ? { rect, d: null, evenOdd: false, parent: null }
+      : { rect: intersect(r, area), d: null, evenOdd: false, parent: t.id };
+    const key = "r" + [def.rect!.x0, def.rect!.y0, def.rect!.x1, def.rect!.y1].map(Math.round).join(" ") + "|" + def.parent;
+    clipStack.push({ rect, id: clipId(key, def), exact: t.exact });
+  };
+
+  const pushPathClip = (d: PathData, evenOdd: boolean, bbox: Rect) => {
+    const t = top();
+    if (recording) {
+      clipStack.push({ ...t });
+      return;
+    }
+    const def: ClipDef = { rect: null, d, evenOdd, parent: t.id };
+    const key = "p" + (evenOdd ? 1 : 0) + encodePath(d) + "|" + t.id;
+    clipStack.push({ rect: intersect(t.rect, bbox), id: clipId(key, def), exact: false });
   };
 
   /** Clip id an item with this bbox needs, or undefined if it is invisible. */
   const clipFor = (bbox: Rect): string | null | undefined => {
+    if (recording) return null; // tile content: positioned in pattern space, never culled
     const t = top();
     if (isEmpty(t.rect) || !meets(bbox, t.rect)) return undefined;
-    const visiblePart = intersect(bbox, area);
-    return contains(t.rect, visiblePart) ? null : t.id;
+    if (t.id === null) return null;
+    if (t.exact && contains(t.rect, intersect(bbox, area))) return null;
+    return t.id;
   };
 
   const fontCache = new Map<number, FontStyle>();
@@ -204,7 +253,7 @@ export function collect(mupdf: typeof MuPDF, page: MuPDF.Page, opts: CollectOpti
         const m = concat(trm as Matrix, ctm);
         const g: Glyph = { font, m, gid, uni, adv: font.advanceGlyph(gid, wmode) };
         const box = glyphBox(g);
-        if (!meets(box, top().rect) || !meets(box, area)) {
+        if (!recording && (!meets(box, top().rect) || !meets(box, area))) {
           flush(); // glyph outside the Clip: removed (ADR 0005)
           return;
         }
@@ -238,7 +287,7 @@ export function collect(mupdf: typeof MuPDF, page: MuPDF.Page, opts: CollectOpti
     // A gap of exactly one space width: keep in the same run, a space is inserted.
     const spaceAdv = spaceAdvance(g.font);
     if (Math.abs(along - spaceAdv) <= 0.02 && p.uni !== 32 && g.uni !== 32) {
-      (g as Glyph & { spaceBefore?: boolean }).spaceBefore = true;
+      g.spaceBefore = true;
       return true;
     }
     return false;
@@ -257,22 +306,29 @@ export function collect(mupdf: typeof MuPDF, page: MuPDF.Page, opts: CollectOpti
   };
 
   const emitRun = (run: Glyph[], fill: string, alpha: number) => {
+    if (outlines) {
+      let bbox = emptyRect();
+      for (const g of run) bbox = union(bbox, glyphBox(g));
+      const clipId = clipFor(bbox);
+      if (clipId === undefined) return;
+      const d: PathData = [];
+      for (const g of run) d.push(...outlines.get(g.font, g.gid, g.m));
+      if (d.length > 0)
+        sink.push({ kind: "path", d, fill, evenOdd: false, stroke: null, strokeStyle: null, alpha, bbox, clip: clipId });
+      return;
+    }
+    for (const piece of splitAtWhitespace(run)) emitTextRun(piece, fill, alpha);
+  };
+
+  const emitTextRun = (run: Glyph[], fill: string, alpha: number) => {
     let bbox = emptyRect();
     for (const g of run) bbox = union(bbox, glyphBox(g));
     const clipId = clipFor(bbox);
     if (clipId === undefined) return;
 
-    if (outlines) {
-      const d: PathData = [];
-      for (const g of run) d.push(...outlines.get(g.font, g.gid, g.m));
-      if (d.length > 0)
-        items.push({ kind: "path", d, fill, evenOdd: false, stroke: null, strokeStyle: null, alpha, bbox, clip: clipId });
-      return;
-    }
-
     let str = "";
-    for (const g of run) {
-      if ((g as Glyph & { spaceBefore?: boolean }).spaceBefore) str += " ";
+    for (const [i, g] of run.entries()) {
+      if (i > 0 && g.spaceBefore) str += " ";
       const u = g.uni;
       str += u >= 32 && u !== 0xfffe && u !== 0xffff ? String.fromCodePoint(u) : "�";
     }
@@ -284,7 +340,7 @@ export function collect(mupdf: typeof MuPDF, page: MuPDF.Page, opts: CollectOpti
     const s = Math.hypot(a, b);
     const length = ((last.m[4] - e) * a + (last.m[5] - f) * b) / s + last.adv * s;
     const upright = Math.abs(b) < 1e-3 * s && Math.abs(c) < 1e-3 * s && a > 0 && d < 0 && Math.abs(a + d) < 1e-3 * s;
-    items.push({
+    sink.push({
       kind: "text",
       str,
       x: upright ? e : 0,
@@ -307,7 +363,7 @@ export function collect(mupdf: typeof MuPDF, page: MuPDF.Page, opts: CollectOpti
       if (isEmpty(bbox)) return;
       const clipId = clipFor(bbox);
       if (clipId === undefined) return;
-      items.push({ kind: "path", d, fill: colorToHex(cs, color), evenOdd, stroke: null, strokeStyle: null, alpha, bbox, clip: clipId });
+      sink.push({ kind: "path", d, fill: colorToHex(cs, color), evenOdd, stroke: null, strokeStyle: null, alpha, bbox, clip: clipId });
     },
     strokePath(path, stroke, ctm, cs, color, alpha) {
       if (suppress) return;
@@ -317,29 +373,29 @@ export function collect(mupdf: typeof MuPDF, page: MuPDF.Page, opts: CollectOpti
       const bbox = expand(raw, style.width * 0.75);
       const clipId = clipFor(bbox);
       if (clipId === undefined) return;
-      items.push({ kind: "path", d, fill: null, evenOdd: false, stroke: colorToHex(cs, color), strokeStyle: style, alpha, bbox, clip: clipId });
+      sink.push({ kind: "path", d, fill: null, evenOdd: false, stroke: colorToHex(cs, color), strokeStyle: style, alpha, bbox, clip: clipId });
     },
-    clipPath(path, _evenOdd, ctm) {
-      const { bbox, rect } = walkPath(path, ctm as Matrix);
-      if (!rect) warn("Nicht-rechteckige Beschneidung (angenähert)");
-      pushClip(rect ?? bbox);
+    clipPath(path, evenOdd, ctm) {
+      const { d, bbox, rect } = walkPath(path, ctm as Matrix);
+      if (rect) pushRectClip(rect);
+      else pushPathClip(d, evenOdd, bbox);
     },
     clipStrokePath(path, stroke, ctm) {
       const { bbox } = walkPath(path, ctm as Matrix);
       warn("Beschneidung durch Linie (angenähert)");
-      pushClip(expand(bbox, stroke.getLineWidth() * expansion(ctm as Matrix)));
+      pushRectClip(expand(bbox, stroke.getLineWidth() * expansion(ctm as Matrix)));
     },
     clipText(text, ctm) {
       warn("Beschneidung durch Text (angenähert)");
-      pushClip(textBounds(text, ctm as Matrix));
+      pushRectClip(textBounds(text, ctm as Matrix));
     },
     clipStrokeText(text, _stroke, ctm) {
       warn("Beschneidung durch Text (angenähert)");
-      pushClip(textBounds(text, ctm as Matrix));
+      pushRectClip(textBounds(text, ctm as Matrix));
     },
     clipImageMask(_image, ctm) {
       warn("Bildmaske als Beschneidung (angenähert)");
-      pushClip(transformRect(ctm as Matrix, { x0: 0, y0: 0, x1: 1, y1: 1 }));
+      pushRectClip(transformRect(ctm as Matrix, { x0: 0, y0: 0, x1: 1, y1: 1 }));
     },
     popClip() {
       if (clipStack.length > 1) clipStack.pop();
@@ -366,7 +422,7 @@ export function collect(mupdf: typeof MuPDF, page: MuPDF.Page, opts: CollectOpti
       const pix = image.toPixmap();
       const png = pix.asPNG();
       pix.destroy();
-      items.push({ kind: "image", href: `data:image/png;base64,${base64(png)}`, matrix: m, alpha, bbox, clip: clipId });
+      sink.push({ kind: "image", href: `data:image/png;base64,${base64(png)}`, matrix: m, alpha, bbox, clip: clipId });
     },
     fillImageMask() {
       if (!suppress) warn("Bildmaske");
@@ -382,13 +438,68 @@ export function collect(mupdf: typeof MuPDF, page: MuPDF.Page, opts: CollectOpti
     beginGroup(_bbox, _cs, _isolated, _knockout, blendmode, alpha) {
       if (alpha < 1 || blendmode !== "Normal") warn("Transparenzgruppe (vereinfacht)");
     },
-    beginTile() {
-      suppress++;
-      warn("Musterfüllung (ausgelassen)");
+    beginTile(areaIn, viewIn, xstep, ystep, ctm, id, docId) {
+      // Nested patterns or patterns inside masks are not reproduced.
+      if (suppress || recording) {
+        suppress++;
+        tileStack.push("skip");
+        if (recording) warn("Verschachtelte Musterfüllung (ausgelassen)");
+        return 1;
+      }
+      const m = ctm as Matrix;
+      // MuPDF gives the area to fill in pattern space; ctm maps it to export units.
+      const fillArea = intersect(intersect(transformRect(m, rectOf(areaIn)), top().rect), area);
+      const clip = isEmpty(fillArea) ? undefined : clipFor(fillArea);
+      if (clip === undefined) {
+        suppress++;
+        tileStack.push("skip");
+        return 1;
+      }
+      // One SVG pattern per PDF pattern and matrix; same pattern with a new matrix
+      // references the first one's content (href) instead of repeating it.
+      const contentKey = id ? docId + ":" + id : null;
+      const fullKey = contentKey ? contentKey + "|" + m.map((v) => Math.round(v * 1e4)).join(" ") : null;
+      let pid = fullKey ? patternIds.get(fullKey) : undefined;
+      let record = false;
+      if (!pid) {
+        const base = contentKey ? patternIds.get(contentKey) : undefined;
+        pid = "p" + (patterns.length + 1);
+        patterns.push({ id: pid, base: base ?? null, xstep, ystep, view: rectOf(viewIn), matrix: m, items: [] });
+        if (fullKey) patternIds.set(fullKey, pid);
+        if (contentKey && !base) patternIds.set(contentKey, pid);
+        record = !base;
+      }
+      const { x0, y0, x1, y1 } = fillArea;
+      sink.push({
+        kind: "path",
+        d: [Op.Move, x0, y0, Op.Line, x1, y0, Op.Line, x1, y1, Op.Line, x0, y1, Op.Close],
+        fill: "url(#" + pid + ")",
+        evenOdd: false,
+        stroke: null,
+        strokeStyle: null,
+        alpha: 1,
+        bbox: fillArea,
+        clip,
+      });
+      if (!record) {
+        suppress++;
+        tileStack.push("skip");
+        return 1;
+      }
+      recording++;
+      tileStack.push("record");
+      pageSink = sink;
+      sink = patterns[patterns.length - 1]!.items;
       return 0;
     },
     endTile() {
-      suppress--;
+      const kind = tileStack.pop();
+      if (kind === "record") {
+        recording--;
+        sink = pageSink;
+      } else if (kind === "skip") {
+        suppress--;
+      }
     },
   });
 
@@ -399,7 +510,48 @@ export function collect(mupdf: typeof MuPDF, page: MuPDF.Page, opts: CollectOpti
     dev.destroy();
     outlines?.destroy();
   }
-  return { items, clips, width, height, unsupported };
+  return { items, clips, patterns, width, height, unsupported };
+}
+
+const isWhitespace = (u: number) => u === 32 || u === 9 || u === 0xa0 || (u >= 0x2000 && u <= 0x200b) || u === 0x3000;
+
+/**
+ * SVG viewers drop whitespace at the start/end of a <text> and collapse runs of
+ * spaces, which shifts the following letters (and, with textLength, stretches
+ * them). So: trim whitespace at the edges, keep single inner spaces, and split
+ * wherever more than one space would be needed.
+ */
+export function splitAtWhitespace<G extends { uni: number; spaceBefore?: boolean }>(run: G[]): G[][] {
+  const pieces: G[][] = [];
+  let cur: G[] = [];
+  let pending: G[] = [];
+  let spaces = 0;
+  for (const g of run) {
+    const before = g.spaceBefore ? 1 : 0;
+    if (isWhitespace(g.uni)) {
+      pending.push(g);
+      spaces += 1 + before;
+      continue;
+    }
+    spaces += before;
+    if (cur.length > 0) {
+      if (spaces >= 2) {
+        pieces.push(cur);
+        cur = [];
+      } else {
+        cur.push(...pending);
+      }
+    }
+    pending = [];
+    spaces = 0;
+    cur.push(g);
+  }
+  if (cur.length > 0) pieces.push(cur);
+  return pieces;
+}
+
+function rectOf(r: number[]): Rect {
+  return { x0: r[0]!, y0: r[1]!, x1: r[2]!, y1: r[3]! };
 }
 
 /** Device-space bounds of a text object (approximate em boxes per glyph). */

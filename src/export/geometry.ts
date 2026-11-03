@@ -89,3 +89,10 @@ export function transformRect(m: Matrix, r: Rect): Rect {
   }
   return out;
 }
+
+export function invert(m: Matrix): Matrix {
+  const [a, b, c, d, e, f] = m;
+  const det = a * d - b * c;
+  if (det === 0) return [1, 0, 0, 1, -e, -f];
+  return [d / det, -b / det, -c / det, a / det, (c * f - d * e) / det, (b * e - a * f) / det];
+}

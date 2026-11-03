@@ -26,11 +26,27 @@ merged (`merge.ts`) and serialised (`svg.ts`):
 - **No `<symbol>`/`<use>` instancing.** Merging already puts repeated shapes into one
   path; `<use>` per instance would add elements.
 - Items entirely outside the Clip are dropped; items crossing the edge are kept whole
-  and cut by the viewBox (ADR 0005). Rectangular PDF clip paths become `<clipPath>`
-  rects; other clip shapes are approximated by their bounding box and reported.
+  and cut by the viewBox (ADR 0005).
+- **PDF clip paths** become `<clipPath>` elements: rectangles as `<rect>` (and left
+  out entirely when they do not cut anything), other shapes as exact `<path>`
+  (e.g. the schedule's slanted bands). Nested clips chain via `clip-path` on the
+  `<clipPath>`. IDs are plain (`c1`, `c2`…) for strict SVG parsers.
+- **Tiling patterns** (e.g. the schedule's hatched areas) become SVG `<pattern>`s: the tile
+  content is recorded once in pattern space; further uses with a different matrix
+  reference it via `xlink:href`. The filled area is a rect with `fill="url(#p…)"`,
+  cut to the shape by its clip path. Note: MuPDF passes the fill area to
+  `beginTile` in *pattern* space, not device space.
 - PDF line width 0 ("thinnest line") becomes 0.05 mm (SVG would hide width 0).
 - Not reproduced (counted and shown to the user as a warning): shadings, image masks,
-  soft masks, tiling patterns, transparency group effects.
+  soft masks, nested patterns, transparency group effects; clips by stroke, text or
+  image mask are approximated by their bounding box.
+
+### History
+
+- 2026-11-03: the first real schedule export reported 1,630 skipped pattern fills and 1,268
+  approximated clips; the user confirmed hatching was missing. Patterns and exact clip
+  paths were added, the Test Plan got hatched slanted zones, and the visual test now
+  also compares the amount of ink (non-white pixels) so missing areas fail the test.
 
 ### Merge mode (user-selectable, "Erweitert" section)
 

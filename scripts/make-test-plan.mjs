@@ -183,6 +183,22 @@ for (let r = 0; r < ROWS; r++) {
   }
 }
 
+// ---- Hatched, slanted closure zones (tiling pattern in a non-rectangular shape)
+// Like the "Sperrungen" in time-distance diagrams: exercises pattern fills and
+// clip paths that are not rectangles.
+for (let r = 20; r + 12 < ROWS; r += 97) {
+  const y0 = HEADER + r * ROW;
+  const y1 = y0 + 12 * ROW;
+  const x0 = T0 + Math.floor(rand() * (WEEKS - 60)) * WEEK_W;
+  const w = (10 + Math.floor(rand() * 30)) * WEEK_W;
+  const slant = 25;
+  ops.push("q /Pattern cs /Hatch scn");
+  ops.push(`${X(x0)} ${Y(y0)} m ${X(x0 + w)} ${Y(y0)} l ${X(x0 + w + slant)} ${Y(y1)} l ${X(x0 + slant)} ${Y(y1)} l h f Q`);
+  rgb(0.8, 0, 0, true);
+  lw(0.3);
+  ops.push(`${X(x0)} ${Y(y0)} m ${X(x0 + w)} ${Y(y0)} l ${X(x0 + w + slant)} ${Y(y1)} l ${X(x0 + slant)} ${Y(y1)} l h S`);
+}
+
 // ---- "Today" line, dashed -------------------------------------------------
 rgb(0.9, 0, 0, true);
 lw(0.5);
@@ -198,6 +214,26 @@ fonts.put("F1", doc.addSimpleFont(new mupdf.Font("Helvetica"), "Latin"));
 fonts.put("F2", doc.addSimpleFont(new mupdf.Font("Helvetica-Bold"), "Latin"));
 const res = doc.newDictionary();
 res.put("Font", fonts);
+// Hatch pattern: 45° red lines, cell of 1.5 mm.
+{
+  const cell = 1.5 * MM;
+  const dict = doc.newDictionary();
+  dict.put("Type", doc.newName("Pattern"));
+  dict.put("PatternType", 1);
+  dict.put("PaintType", 1);
+  dict.put("TilingType", 1);
+  const bbox = doc.newArray();
+  for (const v of [0, 0, cell, cell]) bbox.push(v);
+  dict.put("BBox", bbox);
+  dict.put("XStep", cell);
+  dict.put("YStep", cell);
+  dict.put("Resources", doc.newDictionary());
+  const e = cell * 0.25;
+  const hatch = `0.8 0 0 RG ${f(0.12 * MM)} w 0 0 m ${f(cell)} ${f(cell)} l S ${f(-e)} ${f(cell - e)} m ${f(e)} ${f(cell + e)} l S ${f(cell - e)} ${f(-e)} m ${f(cell + e)} ${f(e)} l S`;
+  const patterns = doc.newDictionary();
+  patterns.put("Hatch", doc.addStream(hatch, dict));
+  res.put("Pattern", patterns);
+}
 const content = ops.join("\n");
 const pageObj = doc.addPage([0, 0, W, H], 0, res, content);
 pageObj.put("UserUnit", USER_UNIT);

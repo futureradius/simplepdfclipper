@@ -28,11 +28,24 @@ export function stripSubsetTag(name: string): string {
   return name.replace(/^[A-Z]{6}\+/, "");
 }
 
+/**
+ * Style words that Windows appends to family names, in several UI languages
+ * (German Windows calls Arial Regular/Bold "Arial Standard"/"Arial Fett").
+ */
+const STYLE_WORDS =
+  /^(standard|regular|normal|book|plain|fett|halbfett|kursiv|bold|italic|oblique|semibold|demibold|gras|italique|negrita|cursiva|grassetto|corsivo|vet|cursief)$/i;
+const BOLD_WORDS = /bold|black|heavy|semibold|demi|fett|gras|negrita|grassetto|\bvet\b/i;
+const ITALIC_WORDS = /italic|oblique|kursiv|italique|cursiva|corsivo|cursief/i;
+
 /** Best guess of the family name a user would recognise: "ABCDEF+TimesNewRomanPS-BoldMT" -> "Times New Roman". */
 export function familyOf(pdfFontName: string): string {
   let n = stripSubsetTag(pdfFontName).split(/[-,]/)[0] ?? "";
   n = n.replace(/(PSMT|MT|PS)$/, "");
   n = n.replace(/([a-z])([A-Z])/g, "$1 $2").trim();
+  // Drop trailing style words ("Arial Fett Kursiv" -> "Arial"), but keep at least one word.
+  const words = n.split(/\s+/);
+  while (words.length > 1 && STYLE_WORDS.test(words[words.length - 1]!)) words.pop();
+  n = words.join(" ").replace(/\bSchmal$/i, "Narrow"); // German "Arial Schmal" = Arial Narrow
   return n || "Arial";
 }
 
@@ -55,8 +68,8 @@ export function fontStyleFor(f: FontFacts, substitutions: Record<string, string>
   const name = stripSubsetTag(f.name);
   return {
     family: list.join(","),
-    bold: f.bold || /bold|black|heavy|semibold|demi/i.test(name),
-    italic: f.italic || /italic|oblique/i.test(name),
+    bold: f.bold || BOLD_WORDS.test(name),
+    italic: f.italic || ITALIC_WORDS.test(name),
     metricCompatible: twin !== undefined && substitute === twin,
   };
 }

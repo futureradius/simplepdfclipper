@@ -78,10 +78,34 @@ export interface ImageItem {
 
 export type Item = PathItem | TextItem | ImageItem;
 
+/** A clip region. Either a rectangle or a path; nested clips chain via parent. */
+export interface ClipDef {
+  rect: Rect | null;
+  d: PathData | null;
+  evenOdd: boolean;
+  parent: string | null;
+}
+
+/**
+ * A PDF tiling pattern. Items are the content of one tile in export units, as
+ * drawn for the first use; matrix maps pattern space to export units. A def
+ * with a base reuses the base's content with its own matrix.
+ */
+export interface PatternDef {
+  id: string;
+  base: string | null;
+  xstep: number;
+  ystep: number;
+  view: Rect;
+  matrix: Matrix;
+  items: Item[];
+}
+
 export interface Collected {
   items: Item[];
-  /** Rectangular clip regions referenced by items, by id. */
-  clips: Map<string, Rect>;
+  /** Clip regions referenced by items, by id, parents before children. */
+  clips: Map<string, ClipDef>;
+  patterns: PatternDef[];
   /** The export area: (0, 0) to (width, height) in export units. */
   width: number;
   height: number;

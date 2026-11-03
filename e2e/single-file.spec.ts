@@ -37,6 +37,22 @@ test("opens from file://, loads the Test Plan and exports an SVG", async ({ page
   await page.locator("#clip-h").fill("600");
   await expect(page.locator("#clip-note")).toContainText("1188.9 × 600.0 mm");
 
+  // Resize by dragging the right edge of the red box on the overview, then put it back.
+  await page.locator("#clip-y").fill("10");
+  await page.locator("#clip-h").fill("300");
+  const box = (await page.locator("#clip-box").boundingBox())!;
+  await page.mouse.move(box.x + box.width - 1, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width - 201, box.y + box.height / 2, { steps: 5 });
+  await page.mouse.up();
+  const w = Number((await page.locator("#clip-w").inputValue()).replace(",", "."));
+  expect(w).toBeGreaterThan(850);
+  expect(w).toBeLessThan(950);
+  await page.screenshot({ path: "test-results/handles.png" });
+  await page.locator("#clip-y").fill("2000");
+  await page.locator("#clip-w").fill("1188.9");
+  await page.locator("#clip-h").fill("600");
+
   const download = page.waitForEvent("download", { timeout: 120_000 });
   await page.locator("#export-svg").click();
   const file = await download;

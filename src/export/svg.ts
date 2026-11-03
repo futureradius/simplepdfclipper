@@ -1,10 +1,10 @@
 // Serialises merged groups as a compact SVG (ADR 0011). No CSS: shared styles
 // are inherited attributes on <g>, which every SVG renderer understands.
 
-import type { Matrix, Rect } from "./geometry";
-import { UNITS_PER_MM, type ImageItem, type PathItem, type TextItem } from "./ir";
+import { invert, type Matrix } from "./geometry";
+import { UNITS_PER_MM, type ClipDef, type ImageItem, type PathItem, type PatternDef, type TextItem } from "./ir";
 import type { Group } from "./merge";
-import { PathEncoder } from "./pathdata";
+import { encodePath, PathEncoder } from "./pathdata";
 
 export interface SvgResult {
   svg: string;
@@ -18,7 +18,13 @@ const num = (v: number) => String(Math.round(v));
 const fine = (v: number) => String(Math.round(v * 1e5) / 1e5);
 const matrix = (m: Matrix) => `matrix(${fine(m[0])} ${fine(m[1])} ${fine(m[2])} ${fine(m[3])} ${num(m[4])} ${num(m[5])})`;
 
-export function toSvg(groups: Group[], clips: Map<string, Rect>, width: number, height: number): SvgResult {
+export function toSvg(
+  groups: Group[],
+  clips: Map<string, ClipDef>,
+  patterns: PatternDef[],
+  width: number,
+  height: number,
+): SvgResult {
   const out: string[] = [];
   let elements = 0;
   const el = (s: string) => {
@@ -26,21 +32,39 @@ export function toSvg(groups: Group[], clips: Map<string, Rect>, width: number, 
     out.push(s);
   };
 
+  // Only clip regions and patterns that are actually referenced (plus what they depend on).
+  const usedClips = new Set<string>();
+  const usedPatterns = new Set<string>();
+  const patternById = new Map(patterns.map((p) => [p.id, p]));
+  for (const g of groups)
+    for (const it of g.items) {
+      for (let c = it.clip; c && !usedClips.has(c); c = clips.get(c)?.parent ?? null) usedClips.add(c);
+      if (it.kind === "path" && it.fill?.startsWith("url(#")) {
+        let p = patternById.get(it.fill.slice(5, -1));
+        for (; p && !usedPatterns.has(p.id); p = p.base ? patternById.get(p.base) : undefined) usedPatterns.add(p.id);
+      }
+    }
+  const xlink = [...usedPatterns].some((id) => patternById.get(id)?.base) ? ' xmlns:xlink="http://www.w3.org/1999/xlink"' : "";
+
   el(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width / UNITS_PER_MM}mm" height="${height / UNITS_PER_MM}mm" viewBox="0 0 ${width} ${height}">`,
+    `<svg xmlns="http://www.w3.org/2000/svg"${xlink} width="${width / UNITS_PER_MM}mm" height="${height / UNITS_PER_MM}mm" viewBox="0 0 ${width} ${height}">`,
   );
 
-  // Only clip regions that are actually referenced.
-  const used = new Set<string>();
-  for (const g of groups) for (const it of g.items) if (it.clip) used.add(it.clip);
-  if (used.size > 0) {
+  if (usedClips.size > 0 || usedPatterns.size > 0) {
     el("<defs>");
-    for (const id of used) {
-      const r = clips.get(id)!;
-      el(`<clipPath id="${id}">`);
-      el(`<rect x="${num(r.x0)}" y="${num(r.y0)}" width="${num(r.x1 - r.x0)}" height="${num(r.y1 - r.y0)}"/>`);
+    // Map order is creation order, so parents come before children.
+    for (const [id, c] of clips) {
+      if (!usedClips.has(id)) continue;
+      el(`<clipPath id="${id}"${c.parent ? ` clip-path="url(#${c.parent})"` : ""}>`);
+      if (c.rect) {
+        const r = c.rect;
+        el(`<rect x="${num(r.x0)}" y="${num(r.y0)}" width="${num(r.x1 - r.x0)}" height="${num(r.y1 - r.y0)}"/>`);
+      } else {
+        el(`<path d="${encodePath(c.d!)}"${c.evenOdd ? ' clip-rule="evenodd"' : ""}/>`);
+      }
       out.push("</clipPath>");
     }
+    for (const p of patterns) if (usedPatterns.has(p.id)) writePattern(p, el, out);
     out.push("</defs>");
   }
 
@@ -56,6 +80,30 @@ export function toSvg(groups: Group[], clips: Map<string, Rect>, width: number, 
   }
   out.push("</svg>");
   return { svg: out.join("\n"), elements };
+}
+
+/**
+ * A PDF tiling pattern as an SVG <pattern> in pattern space. The tile content
+ * was recorded in export units, so it is mapped back with the inverse matrix.
+ * Patterns that reuse another's content only set their own matrix.
+ */
+function writePattern(p: PatternDef, el: (s: string) => void, out: string[]): void {
+  const transform = `patternTransform="matrix(${p.matrix.map(fine).join(" ")})"`;
+  if (p.base) {
+    el(`<pattern id="${p.id}" xlink:href="#${p.base}" ${transform}/>`);
+    return;
+  }
+  el(
+    `<pattern id="${p.id}" patternUnits="userSpaceOnUse" x="${fine(p.view.x0)}" y="${fine(p.view.y0)}" ` +
+      `width="${fine(Math.abs(p.xstep))}" height="${fine(Math.abs(p.ystep))}" ${transform}>`,
+  );
+  el(`<g transform="matrix(${invert(p.matrix).map(fine).join(" ")})">`);
+  for (const it of p.items) {
+    if (it.kind === "path") writePath([it], "", el);
+    else if (it.kind === "text") writeText([it], "", el, out);
+    else writeImage(it, "", el);
+  }
+  out.push("</g>", "</pattern>");
 }
 
 function writePath(items: PathItem[], clipAttr: string, el: (s: string) => void): void {

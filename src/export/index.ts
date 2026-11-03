@@ -23,6 +23,6 @@ export interface SvgExport {
 export function exportSvg(mupdf: typeof MuPDF, page: MuPDF.Page, opts: SvgExportOptions): SvgExport {
   const c = collect(mupdf, page, opts);
   const groups = mergeItems(c.items, opts.mergeMode, c.width, c.height);
-  const { svg, elements } = toSvg(groups, c.clips, c.width, c.height);
+  const { svg, elements } = toSvg(groups, c.clips, c.patterns, c.width, c.height);
   return { svg, elements, sourceItems: c.items.length, unsupported: c.unsupported };
 }

@@ -3,6 +3,7 @@ import type { PlanInfo } from "./engine/protocol";
 import type { ClipMm, MergeMode } from "./export/index";
 import { saveFile } from "./ui/save";
 import { loadStoredClip, storeClip } from "./ui/storage";
+import { CURSORS, dragClip, hitTest, type Handle, type Point } from "./ui/clipdrag";
 
 const PT_TO_MM = 25.4 / 72;
 const MB = 1_000_000;
@@ -77,27 +78,28 @@ for (const input of Object.values(fields)) {
 
 // ---- Drag a Clip on the overview ------------------------------------------
 const wrap = $("preview-wrap");
-let dragStart: { x: number; y: number } | undefined;
-const toMm = (ev: MouseEvent) => {
+const GRAB_PX = 8; // how close (screen pixels) the mouse must be to grab an edge
+let drag: { handle: Handle; from: Point; start: ClipMm } | undefined;
+const toMm = (ev: MouseEvent): Point => {
   const r = $("preview").getBoundingClientRect();
   return { x: (ev.clientX - r.left) / previewScale, y: (ev.clientY - r.top) / previewScale };
 };
 wrap.addEventListener("mousedown", (ev) => {
   if (!plan || ev.button !== 0) return;
-  dragStart = toMm(ev);
+  const p = toMm(ev);
+  drag = { handle: hitTest(clip, p, GRAB_PX / previewScale), from: p, start: { ...clip } };
   ev.preventDefault();
 });
 window.addEventListener("mousemove", (ev) => {
-  if (!dragStart) return;
+  if (!plan) return;
   const p = toMm(ev);
-  setClip({
-    x: Math.min(dragStart.x, p.x),
-    y: Math.min(dragStart.y, p.y),
-    width: Math.abs(p.x - dragStart.x),
-    height: Math.abs(p.y - dragStart.y),
-  });
+  if (!drag) {
+    wrap.style.cursor = CURSORS[hitTest(clip, p, GRAB_PX / previewScale)];
+    return;
+  }
+  setClip(dragClip(drag.start, drag.handle, drag.from, p, { width: plan.widthMm, height: plan.heightMm }));
 });
-window.addEventListener("mouseup", () => (dragStart = undefined));
+window.addEventListener("mouseup", () => (drag = undefined));
 
 // ---- Open a Plan -----------------------------------------------------------
 function showDetails(info: PlanInfo): void {

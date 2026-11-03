@@ -4,3 +4,6 @@ samples/
 test-results/
 playwright-report/
 *.log
+
+# Private example files from real projects: never commit or publish.
+test/
