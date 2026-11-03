@@ -23,6 +23,13 @@ merged (`merge.ts`) and serialised (`svg.ts`):
   `<g>` around text of the same style. Attributes work in every SVG renderer, and
   after merging there are so few paths that classes would not save anything.
 - Paths with identical style are merged into one `<path>` with many subpaths.
+- **Stroke compaction** (`strokes.ts`): within a merged stroke group (opaque, not
+  dashed), axis-parallel pieces on the same line that touch or overlap are joined
+  into one line, and duplicate edges vanish. Exporters draw grid lines row by row and
+  cells as separate rectangles, so this removes most of the line data. Rectangles
+  are split into edges only where that keeps the mitred corners exactly (butt caps:
+  edges extended by half the width; square caps: as is); per group the smaller
+  encoding wins.
 - **No `<symbol>`/`<use>` instancing.** Merging already puts repeated shapes into one
   path; `<use>` per instance would add elements.
 - Items entirely outside the Clip are dropped; items crossing the edge are kept whole
@@ -53,7 +60,7 @@ merged (`merge.ts`) and serialised (`svg.ts`):
 | Mode | Merges | Exactness |
 |---|---|---|
 | Exakt | only into the most recent element | always identical |
-| Ausgewogen (default) | into the latest same-style element if nothing painted after it overlaps (grid spatial index over bounding boxes) | identical |
+| Ausgewogen (default) | into the latest same-style element if nothing painted after it overlaps (grid spatial index over bounding boxes); a line may pass under/over other *lines* | identical except the colour of points where two lines cross |
 | Maximal | into the latest same-style element regardless of order | overlaps may change stacking |
 
 In every mode: translucent and dashed items are never merged, and filled paths only
@@ -81,6 +88,29 @@ Visual check (`e2e/svg-fidelity.spec.ts`, Edge, 3 px/mm, pixels differing by > 2
 - exact vs. max: 0.002 %
 - PDF (MuPDF raster) vs. SVG: 0.25 % with real text, 0.10 % with outlines: glyph
   rasterisation differences only, verified by inspecting crops.
+
+### Full-page measurements after stroke compaction (2026-11-03)
+
+The first full-page export of a real schedule (3.1 MB PDF) gave ~9.5 MB SVG
+(Ausgewogen). PDF content streams are deflate-compressed, SVG is not: the full Test
+Plan SVG is 11.4 MB but only 0.26 MB gzipped, i.e. mostly repetition.
+`scripts/svg-breakdown.mjs` showed 89 % of the bytes were line data.
+
+| Full Test Plan (1188.9 × 14270.9 mm) | before | stroke compaction | + lines may cross (Ausgewogen) |
+|---|---|---|---|
+| Exakt | 11.4 MB | 7.9 MB | 7.9 MB |
+| Ausgewogen | 11.4 MB | 7.6 MB | 6.5 MB |
+| Maximal | ~10 MB | 1.1 MB | 1.1 MB |
+
+Ausgewogen stays far above Maximal on the Test Plan because each row's zebra band is
+drawn between that row's grid pieces; moving the pieces past the band would hide
+them, so they cannot merge. Maximal ignores this (harmless in the Test Plan, but in
+real Plans e.g. white label boxes drawn over lines could end up under them).
+
+Visual test: Exakt vs. Ausgewogen still 0.000 % differing pixels. The "ink" check
+was replaced by counting clearly red pixels (hatching, red lines; ~94 % in all
+variants vs. the MuPDF raster), because thin grey lines anti-alias lighter when
+drawn once instead of twice, and Edge renders text lighter than MuPDF.
 
 ## Consequences
 

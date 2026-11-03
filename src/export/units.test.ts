@@ -149,6 +149,22 @@ describe("mergeItems", () => {
     expect(shape(mergeItems(layered, "max", 1000, 1000))).toEqual([2, 1]);
   });
 
+  it("balanced: lines may cross other lines (only the crossing point changes), not areas", () => {
+    const grid = [
+      stroke(box(100, 0, 110, 50), "#bbb"), // grid piece row 1
+      stroke(box(0, 45, 500, 55), "#ddd"), // row line crossing it
+      stroke(box(100, 50, 110, 100), "#bbb"), // grid piece row 2 -> joins piece 1
+    ];
+    expect(shape(mergeItems(grid, "balanced", 1000, 1000))).toEqual([2, 1]);
+    expect(shape(mergeItems(grid, "exact", 1000, 1000))).toEqual([1, 1, 1]);
+    const band = [
+      stroke(box(100, 0, 110, 50), "#bbb"),
+      fill(box(0, 50, 500, 100), "#eee"), // zebra band of row 2
+      stroke(box(100, 50, 110, 100), "#bbb"), // must stay above the band
+    ];
+    expect(shape(mergeItems(band, "balanced", 1000, 1000))).toEqual([1, 1, 1]);
+  });
+
   it("never merges overlapping fills (fill-rule holes)", () => {
     const overlappingFills = [fill(box(0, 0, 100, 100)), fill(box(50, 50, 150, 150))];
     for (const mode of ["exact", "balanced", "max"] as const)

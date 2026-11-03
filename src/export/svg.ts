@@ -5,6 +5,7 @@ import { invert, type Matrix } from "./geometry";
 import { UNITS_PER_MM, type ClipDef, type ImageItem, type PathItem, type PatternDef, type TextItem } from "./ir";
 import type { Group } from "./merge";
 import { encodePath, PathEncoder } from "./pathdata";
+import { compactStrokes } from "./strokes";
 
 export interface SvgResult {
   svg: string;
@@ -109,7 +110,13 @@ function writePattern(p: PatternDef, el: (s: string) => void, out: string[]): vo
 function writePath(items: PathItem[], clipAttr: string, el: (s: string) => void): void {
   const p = items[0]!;
   const enc = new PathEncoder();
-  for (const it of items) enc.add(it.d);
+  const s0 = p.strokeStyle;
+  if (!p.fill && p.stroke && s0 && !s0.dashes && p.alpha === 1 && items.length > 1) {
+    // Join touching collinear pieces of the same stroke (exact, see strokes.ts).
+    enc.add(compactStrokes(items.map((it) => it.d), s0, (d) => encodePath(d).length));
+  } else {
+    for (const it of items) enc.add(it.d);
+  }
   let attrs = "";
   if (p.fill) {
     attrs += ` fill="${p.fill}"`;

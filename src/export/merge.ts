@@ -100,6 +100,9 @@ class SpatialIndex {
 
 export function mergeItems(items: Item[], mode: MergeMode, width: number, height: number): Group[] {
   const groups: Group[] = [];
+  /** Per group: consists of opaque stroked paths only (lines). */
+  const lineGroup: boolean[] = [];
+  const isLine = (it: Item) => it.kind === "path" && it.fill === null && it.stroke !== null && it.alpha === 1;
   const lastByKey = new Map<string, number>();
   // ~200k cells over the area keeps both memory and per-item work small.
   const cell = Math.max(100, Math.sqrt((width * height) / 200_000));
@@ -112,9 +115,13 @@ export function mergeItems(items: Item[], mode: MergeMode, width: number, height
 
     if (candidate !== undefined && (mode !== "exact" || candidate === groups.length - 1)) {
       const isFill = item.kind === "path" && item.fill !== null;
+      const line = isLine(item);
       const blocked = index.someOverlapping(item.bbox, (g) => {
         if (g === candidate) return isFill; // fills must not overlap their own group
-        return mode !== "max" && g > candidate; // something in between overlaps
+        if (mode === "max" || g < candidate) return false;
+        // Something painted in between overlaps. In "balanced", lines crossing
+        // lines do not count: only the colour of the tiny crossing point can change.
+        return !(mode === "balanced" && line && lineGroup[g]);
       });
       if (!blocked) target = candidate;
     }
@@ -122,6 +129,7 @@ export function mergeItems(items: Item[], mode: MergeMode, width: number, height
     if (target === -1) {
       target = groups.length;
       groups.push({ key: key ?? `solo${target}`, items: [item] });
+      lineGroup.push(isLine(item));
       if (key !== null) lastByKey.set(key, target);
     } else {
       groups[target]!.items.push(item);
