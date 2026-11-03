@@ -36,6 +36,9 @@ test("exported SVG looks like the PDF", async ({ page }) => {
     max: exportSvg(mupdf, pdfPage, { clip: CLIP, textAsPaths: false, mergeMode: "max" }).svg,
   };
   const outlines = exportSvg(mupdf, pdfPage, { clip: CLIP, textAsPaths: true, mergeMode: "balanced" }).svg;
+  const reusedExport = exportSvg(mupdf, pdfPage, { clip: CLIP, textAsPaths: false, mergeMode: "balanced", reuseShapes: true });
+  const reused = reusedExport.svg;
+  console.log(`reuse: ${(svgs.balanced.length / 1e3).toFixed(0)} kB -> ${(reused.length / 1e3).toFixed(0)} kB, uses ${(reused.match(/<use /g) ?? []).length}`);
 
   const w = Math.round(CLIP.width * PX_PER_MM);
   const h = Math.round(CLIP.height * PX_PER_MM);
@@ -45,6 +48,7 @@ test("exported SVG looks like the PDF", async ({ page }) => {
     balanced: `data:image/svg+xml;base64,${Buffer.from(svgs.balanced).toString("base64")}`,
     max: `data:image/svg+xml;base64,${Buffer.from(svgs.max).toString("base64")}`,
     outlines: `data:image/svg+xml;base64,${Buffer.from(outlines).toString("base64")}`,
+    reused: `data:image/svg+xml;base64,${Buffer.from(reused).toString("base64")}`,
   };
 
   const { out: result, ink } = await page.evaluate(
@@ -116,6 +120,7 @@ test("exported SVG looks like the PDF", async ({ page }) => {
         ["exact", "balanced"],
         ["exact", "max"],
         ["reference", "outlines"],
+        ["balanced", "reused"],
       ] as [string, string][],
     },
   );
@@ -138,6 +143,10 @@ test("exported SVG looks like the PDF", async ({ page }) => {
       expect(ratio, `${m} pixels ${k} vs reference`).toBeLessThan(1.3);
     }
   }
+  // Reusing shapes must not change the picture, and must actually reuse something.
+  expect((reused.match(/<use /g) ?? []).length).toBeGreaterThan(30); // ~17 signal symbols x 2 shapes in this Clip
+  expect(reused.length).toBeLessThan(svgs.balanced.length);
+  expect(result["balanced-vs-reused"]!.diffShare).toBeLessThan(0.0005);
   // "Exakt" and "Ausgewogen" may differ only where lines cross lines.
   expect(result["exact-vs-balanced"]!.diffShare).toBeLessThan(0.0005);
   // The SVG must look like the PDF (allowing for font rasterisation differences).

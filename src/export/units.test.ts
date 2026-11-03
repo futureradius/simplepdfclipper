@@ -165,6 +165,19 @@ describe("mergeItems", () => {
     expect(shape(mergeItems(band, "balanced", 1000, 1000))).toEqual([1, 1, 1]);
   });
 
+  it("balanced: thin lines may cross text, thick lines and areas may not", () => {
+    const thin = (b: Rect) => ({ ...stroke(b, "#bbb"), strokeStyle: { ...stroke(b).strokeStyle!, width: 10 } });
+    const thick = (b: Rect) => ({ ...stroke(b, "#bbb"), strokeStyle: { ...stroke(b).strokeStyle!, width: 200 } });
+    const label = text(box(80, 40, 200, 70));
+    // grid piece, label crossing the next piece, next piece: thin -> joins
+    expect(shape(mergeItems([thin(box(100, 0, 110, 50)), label, thin(box(100, 50, 110, 100))], "balanced", 1000, 1000))).toEqual([2, 1]);
+    // same with a thick bar line: the text must stay above it
+    expect(shape(mergeItems([thick(box(100, 0, 110, 50)), label, thick(box(100, 50, 110, 100))], "balanced", 1000, 1000))).toEqual([1, 1, 1]);
+    // a white label box (area) in between: must stay above the line
+    const whiteBox = fill(box(80, 40, 200, 70), "#fff");
+    expect(shape(mergeItems([thin(box(100, 0, 110, 50)), whiteBox, thin(box(100, 50, 110, 100))], "balanced", 1000, 1000))).toEqual([1, 1, 1]);
+  });
+
   it("never merges overlapping fills (fill-rule holes)", () => {
     const overlappingFills = [fill(box(0, 0, 100, 100)), fill(box(50, 50, 150, 150))];
     for (const mode of ["exact", "balanced", "max"] as const)

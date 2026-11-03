@@ -98,11 +98,36 @@ class SpatialIndex {
   }
 }
 
+/** Lines up to this width may pass over/under text (0.3 mm in export units). */
+const THIN_LINE = 30;
+
+type Kind = "thin-line" | "line" | "text" | "other";
+
+function kindOf(it: Item): Kind {
+  if (it.kind === "text") return it.alpha === 1 ? "text" : "other";
+  if (it.kind === "path" && it.fill === null && it.stroke !== null && it.alpha === 1)
+    return (it.strokeStyle?.width ?? 0) <= THIN_LINE ? "thin-line" : "line";
+  return "other";
+}
+
+/**
+ * Overlaps whose paint order only changes tiny details: lines crossing lines (the
+ * colour of the crossing point) and thin lines crossing text (whether a hairline
+ * runs over or under a letter). Areas (fills, hatching, images) always keep their
+ * order, so e.g. white label boxes stay above the lines they mask, and thick lines
+ * keep their order against text, which could otherwise vanish under a bar.
+ */
+function mayCross(a: Kind, b: Kind): boolean {
+  const lineA = a === "line" || a === "thin-line";
+  const lineB = b === "line" || b === "thin-line";
+  if (lineA && lineB) return true;
+  return (a === "thin-line" && b === "text") || (a === "text" && b === "thin-line");
+}
+
 export function mergeItems(items: Item[], mode: MergeMode, width: number, height: number): Group[] {
   const groups: Group[] = [];
-  /** Per group: consists of opaque stroked paths only (lines). */
-  const lineGroup: boolean[] = [];
-  const isLine = (it: Item) => it.kind === "path" && it.fill === null && it.stroke !== null && it.alpha === 1;
+  /** Per group: what it consists of, for the relaxed rules in "balanced". */
+  const groupKind: Kind[] = [];
   const lastByKey = new Map<string, number>();
   // ~200k cells over the area keeps both memory and per-item work small.
   const cell = Math.max(100, Math.sqrt((width * height) / 200_000));
@@ -115,13 +140,13 @@ export function mergeItems(items: Item[], mode: MergeMode, width: number, height
 
     if (candidate !== undefined && (mode !== "exact" || candidate === groups.length - 1)) {
       const isFill = item.kind === "path" && item.fill !== null;
-      const line = isLine(item);
+      const kind = kindOf(item);
       const blocked = index.someOverlapping(item.bbox, (g) => {
         if (g === candidate) return isFill; // fills must not overlap their own group
         if (mode === "max" || g < candidate) return false;
-        // Something painted in between overlaps. In "balanced", lines crossing
-        // lines do not count: only the colour of the tiny crossing point can change.
-        return !(mode === "balanced" && line && lineGroup[g]);
+        // Something painted in between overlaps. "balanced" ignores overlaps whose
+        // order is practically invisible (see mayCross).
+        return !(mode === "balanced" && mayCross(kind, groupKind[g]!));
       });
       if (!blocked) target = candidate;
     }
@@ -129,7 +154,7 @@ export function mergeItems(items: Item[], mode: MergeMode, width: number, height
     if (target === -1) {
       target = groups.length;
       groups.push({ key: key ?? `solo${target}`, items: [item] });
-      lineGroup.push(isLine(item));
+      groupKind.push(kindOf(item));
       if (key !== null) lastByKey.set(key, target);
     } else {
       groups[target]!.items.push(item);

@@ -130,3 +130,26 @@ for (const kind of ["fill", "stroke"]) {
   const repeatedInstances = repeats.reduce((a, b) => a + b, 0);
   console.log(`  identical shapes (same form, any position): ${repeats.length} forms used ${repeatedInstances} times in total`);
 }
+
+// ---- What are the curved shapes? Typical size (letters are ~2-4 mm tall) ----
+function sizeOf(s) {
+  let x = 0, y = 0, x0 = 0, x1 = 0, y0 = 0, y1 = 0, a = 0;
+  const ext = (px, py) => { x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py); };
+  for (const c of s.cmds) {
+    if (c === "h") { x += s.args[a++]; ext(x, y); }
+    else if (c === "v") { y += s.args[a++]; ext(x, y); }
+    else if (c === "l") { x += s.args[a++]; y += s.args[a++]; ext(x, y); }
+    else if (c === "c") { ext(x + s.args[a], y + s.args[a + 1]); ext(x + s.args[a + 2], y + s.args[a + 3]); x += s.args[a + 4]; y += s.args[a + 5]; a += 6; ext(x, y); }
+  }
+  return [(x1 - x0) / 100, (y1 - y0) / 100]; // mm
+}
+const median = (arr) => { const s = [...arr].sort((p, q) => p - q); return s[Math.floor(s.length / 2)] ?? 0; };
+for (const [kind, re] of [["filled", /<path d="([^"]*)" fill="#[^>]*>/g], ["line", /<path d="([^"]*)"[^>]*fill="none"[^>]*>/g]]) {
+  const ws = [], hs = [];
+  for (const m of svg.matchAll(re))
+    for (const s of subpathsOf(m[1])) if (s.cmds.includes("c")) { const [w, h] = sizeOf(s); ws.push(w); hs.push(h); }
+  if (ws.length) {
+    const small = ws.filter((w, i) => w < 6 && hs[i] < 6).length;
+    console.log(`curved ${kind} shapes: median ${median(ws).toFixed(1)} x ${median(hs).toFixed(1)} mm, ${((small / ws.length) * 100).toFixed(0)} % smaller than 6 x 6 mm`);
+  }
+}

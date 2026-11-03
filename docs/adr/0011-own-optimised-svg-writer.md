@@ -60,7 +60,7 @@ merged (`merge.ts`) and serialised (`svg.ts`):
 | Mode | Merges | Exactness |
 |---|---|---|
 | Exakt | only into the most recent element | always identical |
-| Ausgewogen (default) | into the latest same-style element if nothing painted after it overlaps (grid spatial index over bounding boxes); a line may pass under/over other *lines* | identical except the colour of points where two lines cross |
+| Ausgewogen (default) | into the latest same-style element if nothing painted after it overlaps (grid spatial index over bounding boxes); lines may pass under/over other *lines*, and thin lines (≤ 0.3 mm) under/over *text* | identical except crossing points of lines, and whether a hairline runs over or under a letter |
 | Maximal | into the latest same-style element regardless of order | overlaps may change stacking |
 
 In every mode: translucent and dashed items are never merged, and filled paths only
@@ -136,6 +136,25 @@ Changes:
 
 The Test Plan now gives every hatch zone its own pattern object (different origin,
 like the real schedule) and places a logo image five times; a test checks both are stored once.
+
+### Second real-Plan breakdown and shape reuse (2026-11-03)
+
+After pattern/image dedupe: 9.3 MB (Ausgewogen), 7.3 MB (Maximal). Maximal is not
+usable: text slipped behind white label boxes, as predicted. Shape analysis
+(`svg-breakdown.mjs`, counts only): filled curved shapes 8,793 / 1.7 MB and curved
+lines 9,031 / 1.7 MB (~15 segments each); 32,396 filled shapes are only 2,743
+distinct forms. No thin rectangles; plain rectangles are cheap (0.4 MB).
+
+- **Thin lines may cross text** in Ausgewogen (many short line pieces were kept apart
+  by text drawn in between). Areas keep strict order (white label boxes), thick lines
+  keep their order against text (labels on bars).
+- **Option "Wiederkehrende Formen nur einmal speichern"** (off by default): every path
+  whose translation-independent form occurs at least twice and is ≥ 60 characters is
+  stored once in `<defs>` and placed with `<use x y>` inside a `<g>` carrying the
+  paint attributes. Fewer bytes, but each repeat is an element of its own, and it is
+  unknown whether the whiteboard tool suffers more from bytes or from elements: to be compared
+  in the whiteboard tool. Pixel-identical in the visual test.
+- Test Plan: repeated signal symbols (filled circle + ring) every 7 rows.
 
 ## Consequences
 

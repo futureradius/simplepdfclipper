@@ -202,6 +202,25 @@ for (let r = 20; r + 12 < ROWS; r += 97) {
   ops.push(`${X(x0)} ${Y(y0)} m ${X(x0 + w)} ${Y(y0)} l ${X(x0 + w + slant)} ${Y(y1)} l ${X(x0 + slant)} ${Y(y1)} l h S`);
 }
 
+// ---- Signal symbols: repeated curved shapes (filled circle + ring) ----------
+// Like symbols in real schedules: the same form at many positions.
+const K = 0.5523; // circle approximation by 4 Béziers
+const circle = (cx, cy, r) =>
+  `${X(cx + r)} ${Y(cy)} m ${X(cx + r)} ${Y(cy - K * r)} ${X(cx + K * r)} ${Y(cy - r)} ${X(cx)} ${Y(cy - r)} c ` +
+  `${X(cx - K * r)} ${Y(cy - r)} ${X(cx - r)} ${Y(cy - K * r)} ${X(cx - r)} ${Y(cy)} c ` +
+  `${X(cx - r)} ${Y(cy + K * r)} ${X(cx - K * r)} ${Y(cy + r)} ${X(cx)} ${Y(cy + r)} c ` +
+  `${X(cx + K * r)} ${Y(cy + r)} ${X(cx + r)} ${Y(cy + K * r)} ${X(cx + r)} ${Y(cy)} c h`;
+for (let r = 3; r < ROWS; r += 7) {
+  // positions on a 0.1 mm grid, so the shapes are identical after rounding
+  const cx = Math.round((T0 + 20 + rand() * (W_MM - T0 - 40)) * 10) / 10;
+  const cy = HEADER + r * ROW + ROW / 2;
+  rgb(0.1, 0.5, 0.1, false);
+  ops.push(`${circle(cx, cy, 1.2)} f`);
+  rgb(0, 0, 0, true);
+  lw(0.15);
+  ops.push(`${circle(cx, cy, 1.8)} S`);
+}
+
 // ---- Logo image, repeated (like a company logo in several title blocks) -----
 for (let r = 0; r < ROWS; r += 600) {
   const y = HEADER + r * ROW;

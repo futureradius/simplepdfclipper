@@ -10,6 +10,8 @@ export type { MergeMode } from "./merge";
 
 export interface SvgExportOptions extends CollectOptions {
   mergeMode: MergeMode;
+  /** Store repeated shapes once and place them with <use> (fewer bytes, more elements). */
+  reuseShapes?: boolean;
 }
 
 export interface SvgExport {
@@ -23,6 +25,6 @@ export interface SvgExport {
 export function exportSvg(mupdf: typeof MuPDF, page: MuPDF.Page, opts: SvgExportOptions): SvgExport {
   const c = collect(mupdf, page, opts);
   const groups = mergeItems(c.items, opts.mergeMode, c.width, c.height);
-  const { svg, elements } = toSvg(groups, c.clips, c.patterns, c.width, c.height);
+  const { svg, elements } = toSvg(groups, c.clips, c.patterns, c.width, c.height, { reuseShapes: opts.reuseShapes });
   return { svg, elements, sourceItems: c.items.length, unsupported: c.unsupported };
 }

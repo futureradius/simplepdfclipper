@@ -2,7 +2,7 @@
 // are inherited attributes on <g>, which every SVG renderer understands.
 
 import { invert, type Matrix } from "./geometry";
-import { UNITS_PER_MM, type ClipDef, type ImageItem, type PathItem, type PatternDef, type TextItem } from "./ir";
+import { Op, UNITS_PER_MM, type ClipDef, type ImageItem, type PathData, type PathItem, type PatternDef, type TextItem } from "./ir";
 import type { Group } from "./merge";
 import { encodePath, PathEncoder } from "./pathdata";
 import { compactStrokes } from "./strokes";
@@ -25,6 +25,7 @@ export function toSvg(
   patterns: PatternDef[],
   width: number,
   height: number,
+  options: { reuseShapes?: boolean } = {},
 ): SvgResult {
   const out: string[] = [];
   let elements = 0;
@@ -34,6 +35,7 @@ export function toSvg(
   };
 
   const alias = dedupePatterns(patterns);
+  const shapes = options.reuseShapes ? findShapes(groups) : undefined;
   const patternById = new Map(patterns.map((p) => [p.id, p]));
 
   // Only clip regions and patterns that are actually referenced (plus what they depend on).
@@ -61,7 +63,7 @@ export function toSvg(
     `<svg xmlns="http://www.w3.org/2000/svg"${xlink} width="${width / UNITS_PER_MM}mm" height="${height / UNITS_PER_MM}mm" viewBox="0 0 ${width} ${height}">`,
   );
 
-  if (usedClips.size > 0 || usedPatterns.size > 0 || sharedImages.size > 0) {
+  if (usedClips.size > 0 || usedPatterns.size > 0 || sharedImages.size > 0 || (shapes?.ids.size ?? 0) > 0) {
     el("<defs>");
     // Map order is creation order, so parents come before children.
     for (const [id, c] of clips) {
@@ -76,6 +78,7 @@ export function toSvg(
       out.push("</clipPath>");
     }
     for (const p of patterns) if (usedPatterns.has(p.id)) writePattern(p, el, out);
+    for (const [form, id] of shapes?.ids ?? []) el(`<path id="${id}" d="${form}"/>`);
     for (const [href, id] of sharedImages)
       el(`<image id="${id}" width="1" height="1" preserveAspectRatio="none" xlink:href="${href}"/>`);
     out.push("</defs>");
@@ -87,7 +90,7 @@ export function toSvg(
   for (const g of groups) {
     const first = g.items[0]!;
     const clipAttr = first.clip ? ` clip-path="url(#${first.clip})"` : "";
-    if (first.kind === "path") writePath(g.items as PathItem[], clipAttr, el);
+    if (first.kind === "path") writePath(g.items as PathItem[], clipAttr, el, out, shapes);
     else if (first.kind === "text") writeText(g.items as TextItem[], clipAttr, el, out);
     else writeImage(first as ImageItem, clipAttr, el, sharedImages.get((first as ImageItem).href));
   }
@@ -186,16 +189,49 @@ function writePattern(p: PatternDef, el: (s: string) => void, out: string[]): vo
   out.push("</g>", "</pattern>");
 }
 
-function writePath(items: PathItem[], clipAttr: string, el: (s: string) => void): void {
-  const p = items[0]!;
-  const enc = new PathEncoder();
-  const s0 = p.strokeStyle;
-  if (!p.fill && p.stroke && s0 && !s0.dashes && p.alpha === 1 && items.length > 1) {
-    // Join touching collinear pieces of the same stroke (exact, see strokes.ts).
-    enc.add(compactStrokes(items.map((it) => it.d), s0, (d) => encodePath(d).length));
-  } else {
-    for (const it of items) enc.add(it.d);
+/** Repeated shapes stored once (`<defs>`), by translation-independent form. */
+interface Shapes {
+  /** form (path data starting at 0,0) -> id */
+  ids: Map<string, string>;
+  /** item -> its form and position */
+  of: Map<PathItem, { form: string; dx: number; dy: number }>;
+}
+
+/** Only shapes at least this long (characters of path data) are worth a <use>. */
+const MIN_SHAPE_LENGTH = 60;
+
+/** The item's path moved so it starts at (0, 0), encoded; null for empty paths. */
+function shapeForm(d: PathData): { form: string; dx: number; dy: number } | null {
+  if (d[0] !== Op.Move) return null;
+  const dx = Math.round(d[1]!);
+  const dy = Math.round(d[2]!);
+  const moved: PathData = [];
+  for (let i = 0; i < d.length; ) {
+    const op = d[i++]!;
+    moved.push(op);
+    const n = op === Op.Move || op === Op.Line ? 2 : op === Op.Curve ? 6 : 0;
+    for (let k = 0; k < n; k += 2) moved.push(Math.round(d[i++]!) - dx, Math.round(d[i++]!) - dy);
   }
+  return { form: encodePath(moved), dx, dy };
+}
+
+function findShapes(groups: Group[]): Shapes {
+  const of = new Map<PathItem, { form: string; dx: number; dy: number }>();
+  const counts = new Map<string, number>();
+  for (const g of groups)
+    for (const it of g.items) {
+      if (it.kind !== "path" || it.fill?.startsWith("url(")) continue;
+      const f = shapeForm(it.d);
+      if (!f || f.form.length < MIN_SHAPE_LENGTH) continue;
+      of.set(it, f);
+      counts.set(f.form, (counts.get(f.form) ?? 0) + 1);
+    }
+  const ids = new Map<string, string>();
+  for (const [form, n] of counts) if (n > 1) ids.set(form, `s${ids.size + 1}`);
+  return { ids, of };
+}
+
+function paintAttrs(p: PathItem): string {
   let attrs = "";
   if (p.fill) {
     attrs += ` fill="${p.fill}"`;
@@ -216,7 +252,44 @@ function writePath(items: PathItem[], clipAttr: string, el: (s: string) => void)
     }
     if (p.alpha !== 1) attrs += ` stroke-opacity="${fine(p.alpha)}"`;
   }
-  el(`<path d="${enc.toString()}"${attrs}${clipAttr}/>`);
+  return attrs;
+}
+
+function pathData(items: PathItem[]): string {
+  const p = items[0]!;
+  const enc = new PathEncoder();
+  const s0 = p.strokeStyle;
+  if (!p.fill && p.stroke && s0 && !s0.dashes && p.alpha === 1 && items.length > 1) {
+    // Join touching collinear pieces of the same stroke (exact, see strokes.ts).
+    enc.add(compactStrokes(items.map((it) => it.d), s0, (d) => encodePath(d).length));
+  } else {
+    for (const it of items) enc.add(it.d);
+  }
+  return enc.toString();
+}
+
+/**
+ * One merged group as SVG. With shapes, items whose form repeats elsewhere become
+ * <use> references inside a <g> that carries the paint attributes (inherited by
+ * the referenced shape), next to one <path> for the rest of the group. All items
+ * of a group are interchangeable in paint order, so the picture is unchanged.
+ */
+function writePath(items: PathItem[], clipAttr: string, el: (s: string) => void, out?: string[], shapes?: Shapes): void {
+  const attrs = paintAttrs(items[0]!);
+  const reused = shapes ? items.filter((it) => shapes.ids.has(shapes.of.get(it)?.form ?? "")) : [];
+  if (reused.length === 0 || !shapes || !out) {
+    el(`<path d="${pathData(items)}"${attrs}${clipAttr}/>`);
+    return;
+  }
+  const reusedSet = new Set(reused);
+  const rest = items.filter((it) => !reusedSet.has(it));
+  el(`<g${attrs}${clipAttr}>`);
+  if (rest.length > 0) el(`<path d="${pathData(rest)}"/>`);
+  for (const it of reused) {
+    const f = shapes.of.get(it)!;
+    el(`<use xlink:href="#${shapes.ids.get(f.form)}" x="${f.dx}" y="${f.dy}"/>`);
+  }
+  out.push("</g>");
 }
 
 function writeText(items: TextItem[], clipAttr: string, el: (s: string) => void, out: string[]): void {

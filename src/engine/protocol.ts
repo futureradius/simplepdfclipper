@@ -41,6 +41,7 @@ export interface SvgExportRequest {
   clip: ClipMm;
   mergeMode: MergeMode;
   textAsPaths: boolean;
+  reuseShapes: boolean;
 }
 
 export interface SvgExportResult {

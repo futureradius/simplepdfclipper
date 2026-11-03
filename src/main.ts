@@ -238,7 +238,8 @@ exportButton.addEventListener("click", async () => {
   exportButton.disabled = true;
   status.textContent = "Wird berechnet…";
   try {
-    const r = await engine.exportSvg({ clip, mergeMode, textAsPaths });
+    const reuseShapes = $<HTMLInputElement>("reuse-shapes").checked;
+    const r = await engine.exportSvg({ clip, mergeMode, textAsPaths, reuseShapes });
     const blob = new Blob([r.svg as BlobPart], { type: "image/svg+xml" });
     const size = blob.size;
 
