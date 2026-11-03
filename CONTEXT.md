@@ -8,7 +8,14 @@ vector PDF and SVG.
 
 **Plan**
 The input PDF. A single page, vector graphics + text only (not scanned), ~3 MB or more.
-The reference case is a rail construction schedule, about 1188 mm wide × 7660 mm tall.
+The reference case is a rail construction schedule: 1188.9 mm wide × 14270.9 mm tall, just over 3 MB, opens in ~2.4 s.
+
+**UserUnit**
+A PDF page-level scale factor. PDF limits pages to 14,400 units per side (200 in /
+5,080 mm at the default 1/72 in per unit). The schedule sets `/UserUnit` (2.8092 for the
+reference Plan) so that the long side is exactly 14,400 units. All sizes in the UI and
+in exports are real millimetres with UserUnit applied. Programs that ignore UserUnit
+show such Plans 2.8× too small.
 
 **Clip**
 The one axis-aligned rectangle the user selects on the Plan. Everything inside is kept;
@@ -28,7 +35,7 @@ exported page is exactly the Clip at 1:1. Content outside the Clip is actually
 removed, not just hidden.
 
 **Test Plan**
-A generated stand-in for a real schedule (same size, dense vector lines, bars and
+A generated stand-in for a real schedule (1188 × 7660 mm, an early size estimate; dense vector lines, bars and
 small text, ~3 MB). Used for development and performance tests. Never committed.
 
 ## Why
