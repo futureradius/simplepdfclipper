@@ -26,6 +26,9 @@ Relevant MuPDF.js APIs (verified in v1.28.1 typings):
 
 ## Consequences
 
-- The WASM bundle is several MB; the app must be served over HTTP(S) (not `file://`).
+- The WASM binary is 10.4 MB (3.6 MB brotli). Because the app runs from `file://`
+  (ADR 0001), it cannot be fetched at runtime. MuPDF.js reads its Emscripten config
+  from `globalThis.$libmupdf_wasm_Module`, so the binary can be inlined and passed in
+  as `wasmBinary`.
 - One engine for everything: fewer mismatches between what is shown and what is
   exported.
