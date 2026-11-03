@@ -3,13 +3,14 @@
 
 import wasmGzBase64 from "virtual:mupdf-wasm";
 import EngineWorker from "./worker?worker&inline";
-import type { PlanInfo, RequestBody, Response } from "./protocol";
+import type { PlanInfo, Preview, RequestBody, Response } from "./protocol";
 
 export type EngineMode = "worker" | "main-thread";
 
 export interface Engine {
   mode: EngineMode;
   openPlan(bytes: ArrayBuffer): Promise<PlanInfo>;
+  renderPreview(): Promise<Preview>;
 }
 
 async function decodeWasm(): Promise<ArrayBuffer> {
@@ -72,6 +73,7 @@ function workerEngine(wasm: ArrayBuffer, timeoutMs: number): Promise<Engine> {
         resolve({
           mode: "worker",
           openPlan: (bytes) => call<PlanInfo>({ op: "openPlan", bytes }, [bytes]),
+          renderPreview: () => call<Preview>({ op: "renderPreview" }),
         });
       },
       (e: Error) => {
@@ -86,7 +88,11 @@ function workerEngine(wasm: ArrayBuffer, timeoutMs: number): Promise<Engine> {
 async function mainThreadEngine(wasm: ArrayBuffer): Promise<Engine> {
   const core = await import("./core");
   await core.init(wasm);
-  return { mode: "main-thread", openPlan: async (bytes) => core.openPlan(bytes) };
+  return {
+    mode: "main-thread",
+    openPlan: async (bytes) => core.openPlan(bytes),
+    renderPreview: async () => core.renderPreview(),
+  };
 }
 
 export async function startEngine(): Promise<Engine> {

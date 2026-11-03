@@ -15,6 +15,11 @@ scope.onmessage = async (ev: MessageEvent<Request>) => {
       case "openPlan":
         result = core.openPlan(req.bytes);
         break;
+      case "renderPreview": {
+        const preview = core.renderPreview();
+        scope.postMessage({ id: req.id, ok: true, result: preview } satisfies Response, [preview.png.buffer]);
+        return;
+      }
     }
     scope.postMessage({ id: req.id, ok: true, result } satisfies Response);
   } catch (e) {

@@ -25,6 +25,9 @@ test("opens from file:// and loads the Test Plan", async ({ page }) => {
   expect(mode).toBe("worker");
 
   await page.locator("#file").setInputFiles(TEST_PLAN);
-  await expect(page.locator("#plan-info")).toContainText("1188.0 × 7660.0 mm", { timeout: 60_000 });
+  await expect(page.locator("#plan-info")).toContainText("1188.0 × 7660.0 mm (geladen in", { timeout: 60_000 });
+  await expect(page.locator("#plan-details")).toContainText("MediaBox");
+  await expect(page.locator("#preview")).toHaveJSProperty("naturalWidth", 800);
+  await page.screenshot({ path: "test-results/preview.png" });
   expect(errors).toEqual([]);
 });

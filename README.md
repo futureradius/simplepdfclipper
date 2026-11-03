@@ -19,6 +19,8 @@ double-click. No server, no upload, no installation.
 ## Development
 
 Requires Node.js 22+ and Microsoft Edge (used by the end-to-end tests).
+Run the commands one at a time (Windows PowerShell 5.1 does not support `&&`;
+use `;` to chain them).
 
 ```sh
 npm install

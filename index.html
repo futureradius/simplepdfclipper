@@ -4,17 +4,28 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>simplepdfclipper</title>
+    <style>
+      body { font: 14px/1.4 "Segoe UI", Arial, sans-serif; margin: 16px; background: #f4f4f4; color: #222; }
+      header { display: flex; gap: 12px; align-items: baseline; margin-bottom: 8px; }
+      #version { color: #777; font-size: 12px; }
+      .note { background: #fff8d6; border: 1px solid #e6d27a; padding: 6px 10px; display: inline-block; }
+      table { border-collapse: collapse; margin: 8px 0; background: #fff; }
+      td, th { border: 1px solid #ccc; padding: 3px 8px; text-align: left; }
+      #preview-wrap { max-height: 70vh; overflow: auto; border: 1px solid #ccc; background: #fff; display: inline-block; }
+      #preview { display: block; }
+    </style>
   </head>
   <body>
     <header>
       <strong>simplepdfclipper</strong>
       <span id="version"></span>
     </header>
-    <main>
-      <p id="engine-status">PDF-Engine wird geladen…</p>
-      <label>Plan öffnen: <input id="file" type="file" accept="application/pdf,.pdf" disabled /></label>
-      <p id="plan-info"></p>
-    </main>
+    <p class="note">Frühe Entwicklungsversion: Plan öffnen und prüfen. Ausschnitt und Export folgen.</p>
+    <p id="engine-status">PDF-Engine wird geladen…</p>
+    <label>Plan öffnen: <input id="file" type="file" accept="application/pdf,.pdf" disabled /></label>
+    <p id="plan-info"></p>
+    <table id="plan-details" hidden></table>
+    <div id="preview-wrap" hidden><img id="preview" alt="Vorschau des Plans" /></div>
     <script type="module" src="./src/main.ts"></script>
   </body>
 </html>
