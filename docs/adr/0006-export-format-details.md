@@ -43,3 +43,5 @@ Status: accepted (2026-11-03)
 ## Consequences
 
 With real text, SVG appearance depends on fonts where the SVG is displayed.
+
+Amended by ADR 0013 (Tiled Export): there, a page is a Sheet, not the Clip.

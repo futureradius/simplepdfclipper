@@ -30,9 +30,40 @@ A horizontal or vertical line or text edge already in the Plan (grid lines, row
 borders, date column boundaries) that a Clip edge can snap to.
 
 **Export**
-Writing the Clip to a file. Always vector (PDF and SVG). No raster output. The
-exported page is exactly the Clip at 1:1. Content outside the Clip is actually
-removed, not just hidden.
+Writing the Clip to a file. Always vector, never raster. Always 1:1. Either one page
+that is exactly the Clip (PDF and SVG), or a **Tiled Export** (PDF only). Content outside
+the Clip (or outside the Tile) is actually removed, not just hidden.
+
+### Tiled Export
+
+**Tiled Export**
+An Export that cuts the Clip into a grid of Tiles, one per Sheet, to be printed and
+assembled into the full Clip. PDF only.
+_Avoid_: split pages, poster print, spreads
+
+**Tile**
+One rectangular piece of the Clip, printed at 1:1 on one Sheet. Neighbouring Tiles
+meet exactly, without repeating any content. Named by grid position: row letter,
+column number (A1, A2, … B1).
+_Avoid_: spread, page (a page is the PDF's unit, a Tile is a piece of the Clip)
+
+**Sheet**
+The paper one Tile is printed on: the Tile plus the Margin around it.
+_Avoid_: spread, page
+
+**Tile grid**
+How the Clip is divided into columns and rows of Tiles. Set either by **Paper format**
+(every Sheet has that format; the last row and column may be only partly filled) or
+freely, each axis on its own: by **count** (equal shares of the Clip) or by **length**
+(every Tile that long, the last one shorter, its Sheet shrunk to fit).
+
+**Margin**
+The white border around the Tile on each Sheet. It holds no Plan content, only the
+Tile label. Cutting it off makes neighbouring Tiles fit together exactly.
+_Avoid_: edge, overlap (no content is repeated between Tiles)
+
+**Tile label**
+A small note in the Margin naming the Tile (e.g. "B3") and its source.
 
 **Test Plan**
 A generated stand-in for a real schedule (1188.9 × 14270.9 mm with UserUnit like the real one; dense vector lines, bars and
