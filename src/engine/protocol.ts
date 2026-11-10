@@ -1,6 +1,8 @@
 // Messages between the UI and the engine (worker or in-thread fallback).
 
 import type { ClipMm, MergeMode } from "../export/index";
+import type { Tile } from "../export/tilegrid";
+import type { TiledJob } from "../export/tiledpdf";
 
 export type PageBoxName = "MediaBox" | "CropBox" | "BleedBox" | "TrimBox" | "ArtBox";
 
@@ -65,6 +67,14 @@ export interface PdfExportResult {
   seconds: number;
 }
 
+/** Tiled Export (ADR 0013): begin, then one call per Tile, then finish (or abort). */
+export type TilesBeginRequest = TiledJob;
+
+export interface TileResult {
+  /** The Tile as its own PDF (single files); absent in multipage mode. */
+  pdf?: Uint8Array;
+}
+
 export type Request =
   | { id: number; op: "init"; wasmBinary: ArrayBuffer }
   | { id: number; op: "openPlan"; bytes: ArrayBuffer }
@@ -72,7 +82,11 @@ export type Request =
   | { id: number; op: "renderRegion"; region: RegionRequest }
   | { id: number; op: "snapTargets" }
   | { id: number; op: "exportSvg"; options: SvgExportRequest }
-  | { id: number; op: "exportPdf"; options: PdfExportRequest };
+  | { id: number; op: "exportPdf"; options: PdfExportRequest }
+  | { id: number; op: "tilesBegin"; job: TilesBeginRequest }
+  | { id: number; op: "tile"; tile: Tile }
+  | { id: number; op: "tilesFinish" }
+  | { id: number; op: "tilesAbort" };
 
 /** A Request without its id (distributes over the union). */
 export type RequestBody = Request extends infer R ? (R extends Request ? Omit<R, "id"> : never) : never;

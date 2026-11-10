@@ -9,6 +9,15 @@ import type { ClipMm } from "../export/index";
 import { hitTest, type Handle, type Point } from "./clipdrag";
 import type { Guide } from "./snap";
 
+/** Tile grid preview (ADR 0013): cut positions in mm from the Plan origin, and Tile names. */
+export interface TileOverlay {
+  /** Column edges, left to right, including both Clip edges. */
+  xs: number[];
+  /** Row edges, top to bottom, including both Clip edges. */
+  ys: number[];
+  name(row: number, column: number): string;
+}
+
 export interface ViewRect {
   x0: number;
   y0: number;
@@ -55,6 +64,7 @@ export class Viewer {
   private layers: Layer[] = [];
   private clip: ClipMm = { x: 0, y: 0, width: 0, height: 0 };
   private guides: Guide[] = [];
+  private tiles: TileOverlay | undefined;
   /** View: mm at the canvas centre, CSS px per mm. */
   private cx = 0;
   private cy = 0;
@@ -95,6 +105,11 @@ export class Viewer {
   setClip(c: ClipMm, guides: Guide[] = []): void {
     this.clip = c;
     this.guides = guides;
+    this.requestDraw();
+  }
+
+  setTiles(t: TileOverlay | undefined): void {
+    this.tiles = t;
     this.requestDraw();
   }
 
@@ -333,6 +348,7 @@ export class Viewer {
     // Base first, then sharper layers on top (older first, so the newest wins).
     for (const layer of [this.base, ...[...this.layers].sort((a, b) => a.pxPerMm - b.pxPerMm)]) this.drawLayer(layer, vis);
 
+    this.drawTiles();
     this.drawClip();
     this.drawGuides();
   }
@@ -371,6 +387,58 @@ export class Viewer {
       ctx.fillRect(x - 5, y - 5, 10, 10);
       ctx.strokeRect(x - 5, y - 5, 10, 10);
     }
+  }
+
+  /** Dashed cut lines inside the Clip, Tile names where there is room. */
+  private drawTiles(): void {
+    const t = this.tiles;
+    if (!t) return;
+    const { ctx } = this;
+    const top = this.toScreen(0, t.ys[0]!).y;
+    const bottom = this.toScreen(0, t.ys.at(-1)!).y;
+    const left = this.toScreen(t.xs[0]!, 0).x;
+    const right = this.toScreen(t.xs.at(-1)!, 0).x;
+    ctx.save();
+    ctx.strokeStyle = COLORS.clip;
+    ctx.lineWidth = 1.25;
+    ctx.setLineDash([7, 4]);
+    ctx.beginPath();
+    for (const x of t.xs.slice(1, -1)) {
+      const sx = Math.round(this.toScreen(x, 0).x) + 0.5;
+      if (sx < 0 || sx > this.cssW) continue;
+      ctx.moveTo(sx, Math.max(top, 0));
+      ctx.lineTo(sx, Math.min(bottom, this.cssH));
+    }
+    for (const y of t.ys.slice(1, -1)) {
+      const sy = Math.round(this.toScreen(0, y).y) + 0.5;
+      if (sy < 0 || sy > this.cssH) continue;
+      ctx.moveTo(Math.max(left, 0), sy);
+      ctx.lineTo(Math.min(right, this.cssW), sy);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Names in the top-left corner of each visible Tile that is large enough on screen.
+    ctx.font = "600 12px \"Segoe UI\", system-ui, sans-serif";
+    ctx.textBaseline = "top";
+    ctx.lineJoin = "round";
+    for (let r = 0; r < t.ys.length - 1; r++) {
+      const y0 = this.toScreen(0, t.ys[r]!).y;
+      const y1 = this.toScreen(0, t.ys[r + 1]!).y;
+      if (y1 < 0 || y0 > this.cssH || y1 - y0 < 22) continue;
+      for (let c = 0; c < t.xs.length - 1; c++) {
+        const x0 = this.toScreen(t.xs[c]!, 0).x;
+        const x1 = this.toScreen(t.xs[c + 1]!, 0).x;
+        if (x1 < 0 || x0 > this.cssW || x1 - x0 < 34) continue;
+        const label = t.name(r, c);
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = "rgba(255,255,255,0.9)";
+        ctx.strokeText(label, Math.max(x0, 0) + 6, Math.max(y0, 0) + 5);
+        ctx.fillStyle = COLORS.clip;
+        ctx.fillText(label, Math.max(x0, 0) + 6, Math.max(y0, 0) + 5);
+      }
+    }
+    ctx.restore();
   }
 
   private drawGuides(): void {

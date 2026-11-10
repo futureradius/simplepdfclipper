@@ -36,6 +36,18 @@ scope.onmessage = async (ev: MessageEvent<Request>) => {
         scope.postMessage({ id: req.id, ok: true, result: r } satisfies Response, [r.pdf.buffer]);
         return;
       }
+      case "tilesBegin":
+        result = core.tilesBegin(req.job);
+        break;
+      case "tile":
+      case "tilesFinish": {
+        const r = req.op === "tile" ? core.tile(req.tile) : core.tilesFinish();
+        scope.postMessage({ id: req.id, ok: true, result: r } satisfies Response, r.pdf ? [r.pdf.buffer] : []);
+        return;
+      }
+      case "tilesAbort":
+        result = core.tilesAbort();
+        break;
       case "exportSvg": {
         const r = core.exportSvg(req.options);
         scope.postMessage({ id: req.id, ok: true, result: r } satisfies Response, [r.svg.buffer]);

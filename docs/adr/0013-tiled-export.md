@@ -44,10 +44,29 @@ button is disabled while it is switched on, with a note and tooltip saying why.
   - single-page files `<Plan>_Ausschnitt_Kachel_B3.pdf`, written into a folder
     chosen with the folder picker; fallback: one ZIP download;
   - one multipage file `<Plan>_Ausschnitt_Kacheln.pdf`, pages row by row.
-- **Limits:** remainders under 0.1 mm are dropped; Tiles at least 10 mm; above 100
+- **Limits:** a remainder under 0.1 mm is no Tile of its own; it joins the last Tile (nothing is lost); Tiles at least 10 mm; above 100
   Sheets an amber warning, never a refusal. Progress ("Kachel 12 von 70") with
   cancel.
 - **Preview:** the Tile grid with Tile names is drawn over the Clip in the precision
   view and the overview.
 - **Remembered** like the Clip (ADR 0007): on/off, mode, format, orientation, both
   axes' leading field and value, Margin, output mode. Named presets: issue #5.
+
+## Implementation (2026-11-10)
+
+- `src/export/tilegrid.ts`: the Tile grid (pure geometry, unit-tested).
+  `src/export/tiledpdf.ts`: two stages, so the big Plan is redacted only once: the
+  Clip is exported as usual, then every Tile is cut out of that Clip PDF with the same
+  `exportPdf` (removal per Tile), placed on its Sheet. One engine call per Tile, so the
+  UI shows progress and can cancel. Test Plan, Clip 1188.9 × 600 mm on A4: 21 Tiles in
+  2.3 s, 0.34 MB in total.
+- On a Sheet the Tile content is clipped to the Tile (`re W n`): lines kept whole across
+  the edge (ADR 0005) would otherwise show in the Margin.
+- Cut marks: 0.1 pt black lines, 1 mm away from each Tile corner, up to 5 mm long; need
+  a Margin of at least 2 mm. Tile label: 7 pt grey base-14 Helvetica (not embedded,
+  WinAnsi), needs at least 4 mm. A Tile too narrow for the full label gets just its name.
+- Multipage: each Tile PDF is grafted into one document.
+- Edge on `file://` is a secure context and offers `showDirectoryPicker` (checked in the
+  e2e test), so single files go straight into a folder. The ZIP fallback is a small
+  stored (uncompressed) writer in `src/ui/zip.ts`. Dialogs are opened before the export
+  starts, as they need the click that started it.

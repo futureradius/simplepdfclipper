@@ -14,7 +14,10 @@ import type {
   Response,
   SvgExportRequest,
   SvgExportResult,
+  TileResult,
+  TilesBeginRequest,
 } from "./protocol";
+import type { Tile } from "../export/tilegrid";
 import type { SnapIndex } from "../ui/snap";
 
 export type EngineMode = "worker" | "main-thread";
@@ -27,6 +30,10 @@ export interface Engine {
   snapTargets(): Promise<SnapIndex>;
   exportSvg(options: SvgExportRequest): Promise<SvgExportResult>;
   exportPdf(options: PdfExportRequest): Promise<PdfExportResult>;
+  tilesBegin(job: TilesBeginRequest): Promise<void>;
+  tile(tile: Tile): Promise<TileResult>;
+  tilesFinish(): Promise<TileResult>;
+  tilesAbort(): Promise<void>;
 }
 
 async function decodeWasm(): Promise<ArrayBuffer> {
@@ -94,6 +101,10 @@ function workerEngine(wasm: ArrayBuffer, timeoutMs: number): Promise<Engine> {
           snapTargets: () => call<SnapIndex>({ op: "snapTargets" }),
           exportSvg: (options) => call<SvgExportResult>({ op: "exportSvg", options }),
           exportPdf: (options) => call<PdfExportResult>({ op: "exportPdf", options }),
+          tilesBegin: (job) => call<void>({ op: "tilesBegin", job }),
+          tile: (tile) => call<TileResult>({ op: "tile", tile }),
+          tilesFinish: () => call<TileResult>({ op: "tilesFinish" }),
+          tilesAbort: () => call<void>({ op: "tilesAbort" }),
         });
       },
       (e: Error) => {
@@ -116,6 +127,10 @@ async function mainThreadEngine(wasm: ArrayBuffer): Promise<Engine> {
     snapTargets: async () => core.snapTargets(),
     exportSvg: async (options) => core.exportSvg(options),
     exportPdf: async (options) => core.exportPdf(options),
+    tilesBegin: async (job) => core.tilesBegin(job),
+    tile: async (tile) => core.tile(tile),
+    tilesFinish: async () => core.tilesFinish(),
+    tilesAbort: async () => core.tilesAbort(),
   };
 }
 
