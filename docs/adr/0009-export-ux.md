@@ -20,3 +20,5 @@ Status: accepted (2026-11-03)
 - **PDF provenance:** source file name, export date and Clip coordinates (mm) are
   written to the PDF's document properties (title/subject). Nothing is added to the
   page itself.
+
+Amended by ADR 0013 (Tiled Export): cut marks and a Tile label are added, inside the Margin only.

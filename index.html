@@ -31,7 +31,7 @@
         display: flex;
         flex-direction: column;
       }
-      button, input { font: inherit; color: inherit; }
+      button, input, select { font: inherit; color: inherit; }
       [hidden] { display: none !important; }
 
       /* ---- Header ---------------------------------------------------------- */
@@ -87,7 +87,7 @@
 
       /* ---- Workspace ----------------------------------------------------------- */
       .app { flex: 1; min-height: 0; display: grid; grid-template-columns: 320px 1fr 176px; }
-      .panel { background: var(--surface); border-right: 1px solid var(--line); overflow: auto; padding: 6px 0 18px; }
+      .panel { background: var(--surface); border-right: 1px solid var(--line); overflow: hidden auto; padding: 6px 0 18px; }
       .step { padding: 14px 18px 16px; border-bottom: 1px solid var(--line); }
       .step:last-child { border-bottom: 0; }
       .step h2 { display: flex; align-items: center; gap: 9px; font-size: 14px; margin: 0 0 12px; }
@@ -99,10 +99,11 @@
       .plan-name { font-weight: 600; overflow-wrap: anywhere; }
       .muted { color: var(--muted); font-size: 12.5px; }
       .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
+      .field { min-width: 0; }
       .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 3px; }
       .field .input { display: flex; align-items: center; border: 1px solid var(--line-strong); border-radius: 6px; background: #fff; }
       .field .input:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-      .field input { width: 100%; border: 0; background: transparent; padding: 6px 8px; outline: none; font-variant-numeric: tabular-nums; }
+      .field input { width: 100%; min-width: 0; border: 0; background: transparent; padding: 6px 8px; outline: none; font-variant-numeric: tabular-nums; }
       .field .unit { padding-right: 9px; color: var(--muted); font-size: 12px; }
       .switch { display: flex; align-items: center; gap: 10px; margin: 14px 0 4px; cursor: pointer; user-select: none; }
       .switch input { appearance: none; width: 34px; height: 20px; border-radius: 10px; background: var(--line-strong); position: relative; cursor: pointer; flex: 0 0 auto; transition: background 0.15s; margin: 0; }
@@ -111,11 +112,40 @@
       .switch input:checked::after { left: 16px; }
       .hint { margin: 10px 0 0; font-size: 12.5px; color: var(--muted); }
       kbd { font: 11px/1 ui-monospace, Consolas, monospace; padding: 2px 5px; border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 4px; background: #fafbfc; color: var(--text); }
-      .export-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+      .export-buttons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+      .export-buttons.tiling { grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); }
+      .export-buttons .btn { white-space: normal; text-align: center; line-height: 1.2; min-height: 34px; height: auto; padding: 6px 10px; }
       #export-status { margin-top: 10px; font-size: 13px; }
       #export-status p { margin: 6px 0; }
       .warn { background: var(--warn-bg); border: 1px solid var(--warn-line); border-radius: 6px; padding: 7px 9px; }
       .severe { background: var(--severe-bg); border: 1px solid var(--severe-line); border-radius: 6px; padding: 7px 9px; font-weight: 600; }
+      #svg-wrap { display: grid; }
+      .tiles-switch { margin: 0 0 12px; }
+      #tiles-panel { margin: 0 0 14px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: #fafbfc; display: grid; gap: 10px; }
+      .seg { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--line-strong); border-radius: 6px; overflow: hidden; background: #fff; }
+      .seg label { position: relative; cursor: pointer; }
+      .seg input { position: absolute; opacity: 0; pointer-events: none; }
+      .seg span { display: block; text-align: center; padding: 5px 6px; font-size: 13px; }
+      .seg label + label span { border-left: 1px solid var(--line-strong); }
+      .seg input:checked + span { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+      .seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: -2px; }
+      .field select { width: 100%; border: 0; background: transparent; padding: 6px 6px; outline: none; font: inherit; color: inherit; }
+      .linked { display: grid; grid-template-columns: 1fr auto 1fr; align-items: end; gap: 6px; }
+      .linked .link { padding-bottom: 7px; color: var(--muted); cursor: help; }
+      .field.derived .input { background: transparent; border-style: dashed; }
+      .field.derived input { color: var(--muted); }
+      .rest { margin-top: -6px; min-height: 0; font-size: 12px; }
+      .rest:empty { display: none; }
+      #tiles-free { display: grid; gap: 10px; }
+      .margin-row { grid-template-columns: 1fr 1fr; }
+      #tiles-margin-hint { margin: -4px 0 0; }
+      .output label { display: block; margin: 3px 0; }
+      #tiles-summary { font-size: 13px; }
+      #tiles-summary p { margin: 0; }
+      #tiles-summary p + p { margin-top: 6px; }
+      #svg-note { margin: 6px 0 0; }
+      .progress { display: flex; align-items: center; gap: 10px; }
+      .progress .btn { height: 28px; padding: 0 10px; }
       #result-img { display: block; max-width: 100%; max-height: 180px; margin-top: 10px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
       details.advanced { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
       details.advanced summary { cursor: pointer; color: var(--muted); font-size: 13px; }
@@ -146,6 +176,9 @@
       #overview-inner { position: relative; user-select: none; touch-action: none; box-shadow: 0 0 0 1px var(--line); }
       #overview-canvas { display: block; width: 100%; }
       #clip-box { position: absolute; border: 2px solid var(--accent); background: rgba(37, 99, 235, 0.10); pointer-events: none; }
+      #tile-grid { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+      #tile-grid line { stroke: var(--accent); stroke-width: 1; stroke-dasharray: 3 2; }
+      #tile-grid text { font: 600 9px "Segoe UI", system-ui, sans-serif; fill: var(--accent); paint-order: stroke; stroke: rgba(255,255,255,.85); stroke-width: 2.5px; }
       #view-box { position: absolute; border: 1.5px dashed #3d4452; pointer-events: none; }
 
       /* ---- About ---------------------------------------------------------------- */
@@ -214,10 +247,59 @@
 
         <section class="step">
           <h2><span class="n">3</span>Export</h2>
+          <label class="switch tiles-switch"><input id="tiles-on" type="checkbox" /> Auf Blätter aufteilen (Kacheln)</label>
+          <div id="tiles-panel" hidden>
+            <div class="seg" role="radiogroup" aria-label="Aufteilen nach">
+              <label><input type="radio" name="tiles-mode" value="paper" /><span>Papierformat</span></label>
+              <label><input type="radio" name="tiles-mode" value="free" /><span>Eigene Aufteilung</span></label>
+            </div>
+            <div id="tiles-paper" class="fields">
+              <div class="field">
+                <label for="tiles-format">Format</label>
+                <div class="input"><select id="tiles-format">
+                  <option value="A4">A4</option><option value="A3">A3</option><option value="A2">A2</option>
+                  <option value="A1">A1</option><option value="A0">A0</option><option value="custom">Eigenes…</option>
+                </select></div>
+              </div>
+              <div class="field">
+                <label for="tiles-orientation">Ausrichtung</label>
+                <div class="input"><select id="tiles-orientation">
+                  <option value="auto">Automatisch</option><option value="portrait">Hoch</option><option value="landscape">Quer</option>
+                </select></div>
+              </div>
+              <div class="field" data-custom><label for="tiles-custom-w">Breite</label><div class="input"><input id="tiles-custom-w" type="number" step="1" min="20" /><span class="unit">mm</span></div></div>
+              <div class="field" data-custom><label for="tiles-custom-h">Höhe</label><div class="input"><input id="tiles-custom-h" type="number" step="1" min="20" /><span class="unit">mm</span></div></div>
+            </div>
+            <div id="tiles-free">
+              <div class="linked">
+                <div class="field"><label for="tiles-cols">Spalten</label><div class="input"><input id="tiles-cols" type="number" step="1" min="1" /></div></div>
+                <span class="link" aria-hidden="true" title="Verknüpft: der zuletzt geänderte Wert bleibt fest, der andere wird berechnet.">⇄</span>
+                <div class="field"><label for="tiles-col-w">Breite</label><div class="input"><input id="tiles-col-w" type="number" step="0.1" min="10" /><span class="unit">mm</span></div></div>
+              </div>
+              <div class="muted rest" id="tiles-cols-rest"></div>
+              <div class="linked">
+                <div class="field"><label for="tiles-rows">Zeilen</label><div class="input"><input id="tiles-rows" type="number" step="1" min="1" /></div></div>
+                <span class="link" aria-hidden="true" title="Verknüpft: der zuletzt geänderte Wert bleibt fest, der andere wird berechnet.">⇄</span>
+                <div class="field"><label for="tiles-row-h">Höhe</label><div class="input"><input id="tiles-row-h" type="number" step="0.1" min="10" /><span class="unit">mm</span></div></div>
+              </div>
+              <div class="muted rest" id="tiles-rows-rest"></div>
+            </div>
+            <div class="fields margin-row">
+              <div class="field"><label for="tiles-margin">Rand</label><div class="input"><input id="tiles-margin" type="number" step="1" min="0" /><span class="unit">mm</span></div></div>
+            </div>
+            <p class="hint" id="tiles-margin-hint" hidden>Ohne Rand gibt es keine Schnittmarken und keine Beschriftung. Bürodrucker drucken nicht bis an die Blattkante; dort können Inhalte fehlen.</p>
+            <div class="output" role="radiogroup" aria-label="Ausgabe">
+              <div class="muted">Ausgabe</div>
+              <label><input type="radio" name="tiles-output" value="files" /> Einzelne Dateien (in einen Ordner)</label>
+              <label><input type="radio" name="tiles-output" value="multipage" /> Eine mehrseitige PDF</label>
+            </div>
+            <div id="tiles-summary"></div>
+          </div>
           <div class="export-buttons">
-            <button class="btn primary" id="export-svg">SVG exportieren</button>
+            <span id="svg-wrap"><button class="btn primary" id="export-svg">SVG exportieren</button></span>
             <button class="btn" id="export-pdf">PDF exportieren</button>
           </div>
+          <p class="hint" id="svg-note" hidden>SVG-Export ist beim Aufteilen auf Blätter nicht verfügbar.</p>
           <div id="export-status"></div>
           <img id="result-img" alt="Vorschau des exportierten SVG" hidden />
 
@@ -259,6 +341,7 @@
           <div id="overview-inner">
             <canvas id="overview-canvas"></canvas>
             <div id="clip-box"></div>
+            <svg id="tile-grid" aria-hidden="true"></svg>
             <div id="view-box"></div>
           </div>
         </div>

@@ -19,6 +19,10 @@ double-click. No server, no upload, no installation.
    to place freely), draw it in the overview on the right, or type the mm values.
 5. Export as SVG (for the whiteboard tool) or as PDF (for documentation; everything outside the
    Clip is removed from the file).
+6. To print a large Clip at real size, switch on "Auf Blätter aufteilen": the Clip is cut
+   into Tiles by paper format (A4–A0 or custom) or freely (columns/rows by count or by
+   length), each on its own Sheet with a Margin, cut marks and a label. Saved as numbered
+   single PDFs into a folder, or as one multipage PDF (ADR 0013).
 
 ## Roadmap
 
@@ -27,6 +31,8 @@ double-click. No server, no upload, no installation.
 - [x] PDF export with real removal outside the Clip (ADR 0005)
 - [ ] ~~Font substitution dialog~~ (not needed so far, ADR 0012)
 - [x] UI overhaul (ADR 0012)
+- [x] Tiled Export for printing at real size (ADR 0013)
+- [ ] Named presets for export settings (#5)
 
 ## Development
 

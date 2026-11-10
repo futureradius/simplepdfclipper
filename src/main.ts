@@ -1,7 +1,10 @@
 import { startEngine } from "./engine/client";
 import type { PlanInfo } from "./engine/protocol";
 import type { ClipMm, MergeMode } from "./export/index";
-import { saveFile } from "./ui/save";
+import { chooseFolder, chooseSaveTarget, download, saveFile, writeToFolder, type DirectoryHandle } from "./ui/save";
+import { rowName, tiles, type TileGrid } from "./export/tilegrid";
+import { TilesPanel } from "./ui/tilespanel";
+import { zip, type ZipEntry } from "./ui/zip";
 import { loadStoredClip, storeClip } from "./ui/storage";
 import { CURSORS, dragClip, hitTest, type Handle, type Point } from "./ui/clipdrag";
 import { snapClip, type Guide, type SnapIndex } from "./ui/snap";
@@ -71,6 +74,8 @@ function setClip(c: ClipMm, from: "fields" | "other" = "other", guides: Guide[] 
   placeBox($("clip-box"), { x0: clip.x, y0: clip.y, x1: clip.x + clip.width, y1: clip.y + clip.height });
   viewer.setClip(clip, guides);
   storeClip(clip);
+  tilesPanel.update(clip);
+  showTileGrid();
 }
 
 for (const input of Object.values(fields)) {
@@ -93,6 +98,57 @@ function applyDrag(handle: Handle, start: ClipMm, from: Point, to: Point, altKey
   }
   setClip(c, "other", guides);
   return guides;
+}
+
+// ---- Tiled Export settings and grid preview (ADR 0013) -------------------------
+const tilesPanel = new TilesPanel(() => {
+  showTileGrid();
+  updateButtons();
+});
+
+/** The current Tile grid, if Tiled Export is on and the settings are valid. */
+function currentGrid(): TileGrid | undefined {
+  const g = tilesPanel.grid;
+  return g && !("error" in g) ? g : undefined;
+}
+
+function showTileGrid(): void {
+  const g = currentGrid();
+  const svg = $("tile-grid");
+  if (!g || !plan) {
+    viewer.setTiles(undefined);
+    svg.replaceChildren();
+    return;
+  }
+  const xs = [clip.x, ...g.columns.map((c) => clip.x + c.start + c.length)];
+  const ys = [clip.y, ...g.rows.map((r) => clip.y + r.start + r.length)];
+  const name = (r: number, c: number) => rowName(r) + String(c + 1);
+  viewer.setTiles({ xs, ys, name });
+
+  // Overview: thin dashed cut lines, names where a Tile is large enough.
+  const k = overviewScale();
+  const ns = "http://www.w3.org/2000/svg";
+  const parts: SVGElement[] = [];
+  const line = (x1: number, y1: number, x2: number, y2: number) => {
+    const l = document.createElementNS(ns, "line");
+    l.setAttribute("x1", String(x1 * k));
+    l.setAttribute("y1", String(y1 * k));
+    l.setAttribute("x2", String(x2 * k));
+    l.setAttribute("y2", String(y2 * k));
+    parts.push(l);
+  };
+  for (const x of xs.slice(1, -1)) line(x, ys[0]!, x, ys.at(-1)!);
+  for (const y of ys.slice(1, -1)) line(xs[0]!, y, xs.at(-1)!, y);
+  for (let r = 0; r < ys.length - 1; r++)
+    for (let c = 0; c < xs.length - 1; c++) {
+      if ((xs[c + 1]! - xs[c]!) * k < 22 || (ys[r + 1]! - ys[r]!) * k < 14) continue;
+      const t = document.createElementNS(ns, "text");
+      t.setAttribute("x", String(xs[c]! * k + 3));
+      t.setAttribute("y", String(ys[r]! * k + 10));
+      t.textContent = name(r, c);
+      parts.push(t);
+    }
+  svg.replaceChildren(...parts);
 }
 
 // ---- Precision view ------------------------------------------------------
@@ -331,6 +387,23 @@ window.addEventListener("drop", (e) => {
 const exportButton = $<HTMLButtonElement>("export-svg");
 const pdfButton = $<HTMLButtonElement>("export-pdf");
 const status = $("export-status");
+let busy = false;
+
+/** SVG is not available while tiling (ADR 0013); nothing runs twice at once. */
+function updateButtons(): void {
+  const tiling = tilesPanel.settings.enabled;
+  exportButton.disabled = busy || tiling;
+  pdfButton.disabled = busy || (tiling && !currentGrid());
+  const why = tiling ? "SVG-Export ist beim Aufteilen auf Blätter nicht verfügbar." : "";
+  $("svg-wrap").title = why;
+  exportButton.title = why;
+  $("svg-note").hidden = !tiling;
+  pdfButton.textContent = tiling ? "Kacheln exportieren" : "PDF exportieren";
+  exportButton.classList.toggle("primary", !tiling);
+  pdfButton.classList.toggle("primary", tiling);
+  pdfButton.parentElement!.classList.toggle("tiling", tiling);
+}
+updateButtons();
 
 function note(text: string, cls = ""): void {
   const p = document.createElement("p");
@@ -343,7 +416,8 @@ exportButton.addEventListener("click", async () => {
   if (!plan) return;
   const mergeMode = (document.querySelector('input[name="merge"]:checked') as HTMLInputElement).value as MergeMode;
   const textAsPaths = $<HTMLInputElement>("text-paths").checked;
-  exportButton.disabled = pdfButton.disabled = true;
+  busy = true;
+  updateButtons();
   status.textContent = "SVG wird berechnet…";
   try {
     const r = await engine.exportSvg({ clip, mergeMode, textAsPaths, reuseShapes: false });
@@ -377,14 +451,17 @@ exportButton.addEventListener("click", async () => {
   } catch (e) {
     status.textContent = `SVG-Export fehlgeschlagen: ${String(e)}`;
   } finally {
-    exportButton.disabled = pdfButton.disabled = false;
+    busy = false;
+    updateButtons();
   }
 });
 
 // PDF export (for documentation; ADR 0005)
 pdfButton.addEventListener("click", async () => {
   if (!plan) return;
-  exportButton.disabled = pdfButton.disabled = true;
+  if (tilesPanel.settings.enabled) return exportTiles();
+  busy = true;
+  updateButtons();
   status.textContent = "PDF wird erstellt…";
   try {
     const r = await engine.exportPdf({ clip, sourceName: plan.fileName });
@@ -402,6 +479,116 @@ pdfButton.addEventListener("click", async () => {
   } catch (e) {
     status.textContent = `PDF-Export fehlgeschlagen: ${String(e)}`;
   } finally {
-    exportButton.disabled = pdfButton.disabled = false;
+    busy = false;
+    updateButtons();
   }
 });
+
+// Tiled Export (ADR 0013): one engine call per Tile, with progress and cancel.
+async function exportTiles(): Promise<void> {
+  const g = currentGrid();
+  if (!plan || !g) return;
+  const multipage = tilesPanel.settings.output === "multipage";
+  const list = tiles(g);
+  const base = `${plan.name}_Ausschnitt`;
+
+  // Ask where to save first: the dialogs need the click that started the export.
+  let folder: DirectoryHandle | undefined;
+  let writeBook: ((blob: Blob) => Promise<void>) | undefined;
+  if (multipage) {
+    const w = await chooseSaveTarget(`${base}_Kacheln.pdf`, "PDF-Dokument", "application/pdf", ".pdf");
+    if (!w) return;
+    writeBook = w;
+  } else {
+    const f = await chooseFolder();
+    if (f === null) return; // cancelled
+    folder = f; // undefined: no folder picker, the Tiles go into a ZIP download
+  }
+
+  busy = true;
+  updateButtons();
+  $("result-img").hidden = true;
+  let cancelled = false;
+  const text = document.createElement("span");
+  const cancel = document.createElement("button");
+  cancel.className = "btn";
+  cancel.id = "tiles-cancel";
+  cancel.textContent = "Abbrechen";
+  cancel.addEventListener("click", () => {
+    cancelled = true;
+    cancel.disabled = true;
+    text.textContent = "Wird abgebrochen…";
+  });
+  const row = document.createElement("div");
+  row.className = "progress";
+  row.append(text, cancel);
+  status.replaceChildren(row);
+
+  const t0 = performance.now();
+  const zipped: ZipEntry[] = [];
+  let bytes = 0;
+  let done = 0;
+  try {
+    text.textContent = "Ausschnitt wird vorbereitet…";
+    await engine.tilesBegin({
+      clip,
+      sourceName: plan.fileName,
+      date: new Date(),
+      multipage,
+      rows: g.rows.length,
+      columns: g.columns.length,
+      marginMm: g.marginMm,
+    });
+    for (const t of list) {
+      if (cancelled) break;
+      text.textContent = `Kachel ${done + 1} von ${list.length} (${t.name})…`;
+      const r = await engine.tile(t);
+      if (r.pdf) {
+        bytes += r.pdf.length;
+        const name = `${base}_Kachel_${t.name}.pdf`;
+        if (folder) await writeToFolder(folder, name, new Blob([r.pdf as BlobPart], { type: "application/pdf" }));
+        else zipped.push({ name, data: r.pdf });
+      }
+      done++;
+    }
+    if (cancelled) {
+      await engine.tilesAbort();
+      status.replaceChildren();
+      note(
+        folder && done > 0
+          ? `Abgebrochen. ${done} von ${list.length} Kacheln wurden in den Ordner „${folder.name}“ geschrieben.`
+          : "Abgebrochen. Es wurde nichts gespeichert.",
+        "warn",
+      );
+      return;
+    }
+    cancel.disabled = true;
+    text.textContent = "Wird gespeichert…";
+    const fin = await engine.tilesFinish();
+    const n = list.length.toLocaleString("de-DE");
+    const secs = `${de((performance.now() - t0) / 1000)} s`;
+    status.replaceChildren();
+    if (writeBook && fin.pdf) {
+      const blob = new Blob([fin.pdf as BlobPart], { type: "application/pdf" });
+      await writeBook(blob);
+      note(`Mehrseitige PDF mit ${n} Seiten: ${de(blob.size / MB, 2)} MB · ${secs}`);
+    } else if (folder) {
+      note(`${n} Kacheln im Ordner „${folder.name}“ gespeichert: ${de(bytes / MB, 2)} MB · ${secs}`);
+    } else {
+      download(zip(zipped), `${base}_Kacheln.zip`);
+      note(`${n} Kacheln als ZIP-Datei gespeichert (kein Ordner-Dialog verfügbar): ${de(bytes / MB, 2)} MB · ${secs}`);
+    }
+    note(
+      g.marginMm >= 2
+        ? "Inhalte außerhalb jeder Kachel entfernt. Zum Zusammensetzen den Rand an den Schnittmarken abschneiden."
+        : "Inhalte außerhalb jeder Kachel entfernt. Die Blätter ohne Rand Kante an Kante zusammensetzen.",
+      "muted",
+    );
+  } catch (e) {
+    await engine.tilesAbort().catch(() => undefined);
+    status.textContent = `Kachel-Export fehlgeschlagen: ${String(e)}`;
+  } finally {
+    busy = false;
+    updateButtons();
+  }
+}

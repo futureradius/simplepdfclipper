@@ -12,7 +12,11 @@ import type {
   RegionResult,
   SvgExportRequest,
   SvgExportResult,
+  TileResult,
+  TilesBeginRequest,
 } from "./protocol";
+import { TiledPdfExport } from "../export/tiledpdf";
+import type { Tile } from "../export/tilegrid";
 import { exportPdf as runPdfExport } from "../export/pdf";
 import type { SnapIndex } from "../ui/snap";
 import { extractSnapTargets } from "./snaptargets";
@@ -143,4 +147,37 @@ export function exportPdf(options: PdfExportRequest): PdfExportResult {
   const t0 = performance.now();
   const r = runPdfExport(lib(), planBytes, { clip: options.clip, sourceName: options.sourceName, date: new Date() });
   return { pdf: r.pdf, normalised: r.normalised, seconds: (performance.now() - t0) / 1000 };
+}
+
+// ---- Tiled Export (ADR 0013) -------------------------------------------------
+
+let tiled: TiledPdfExport | undefined;
+
+/** Exports the Clip once; the Tiles are then cut out of it one by one. */
+export function tilesBegin(job: TilesBeginRequest): void {
+  if (!planBytes) throw new Error("no Plan open");
+  tilesAbort();
+  tiled = new TiledPdfExport(lib(), planBytes, job);
+}
+
+export function tile(t: Tile): TileResult {
+  if (!tiled) throw new Error("no Tiled Export running");
+  const pdf = tiled.tile(t);
+  return pdf ? { pdf } : {};
+}
+
+/** Ends the Tiled Export; returns the multipage file in multipage mode. */
+export function tilesFinish(): TileResult {
+  if (!tiled) throw new Error("no Tiled Export running");
+  try {
+    const pdf = tiled.finish();
+    return pdf ? { pdf } : {};
+  } finally {
+    tilesAbort();
+  }
+}
+
+export function tilesAbort(): void {
+  tiled?.destroy();
+  tiled = undefined;
 }
