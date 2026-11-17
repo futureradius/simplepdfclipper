@@ -61,3 +61,21 @@ identically. Test Plan Clip 1188.9 × 600 mm: 0.19 MB (Plan 4.2 MB), ~1 s.
 Known limit: a path entirely outside the Clip that crosses from one band into
 another without being covered by either band alone (e.g. a diagonal through the
 corner region) is kept, invisible beyond the page edge.
+
+## Images in the SVG (2026-11-17)
+
+A check with generated scans (one image per page, with and without an invisible OCR
+text layer, 150 dpi Flate and 300 dpi JPEG) found the PDF and Tiled Export correct:
+`REDACT_IMAGE_PIXELS` whitens the pixels outside, invisible text outside is removed.
+The SVG export, though, embedded the whole page image and only hid the outside with an
+SVG clip: the rest of the scan was in the file, and a 300 dpi A4 scan made an 11.6 MB SVG.
+
+Now the SVG embeds only the pixels under the visible area (the Clip, narrowed by any
+clip in the Plan) plus a 1 px border, and the image matrix is adjusted so it sits
+exactly where it did. Images inside pattern tiles are kept whole (they repeat in
+pattern space). The same scan: 0.51 MB. Tests: `src/export/imagecrop.test.ts`.
+
+In the PDF the redacted image keeps its full pixel size (mostly white), so a small Clip
+of a JPEG scan can be a little larger than the scan itself (2.0 vs. 1.6 MB). Accepted.
+
+Pages with `/Rotate` still fail on PDF export: see issue #16.

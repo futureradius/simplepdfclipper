@@ -129,6 +129,9 @@ Changes:
   hatch lines of re-used patterns sit exactly where MuPDF draws them.
 - **Image deduplication:** images used more than once are stored once in `<defs>`
   and placed with `<use>`.
+- **Images cut to the Clip** (2026-11-17, ADR 0005): only the pixels under the visible
+  area (plus 1 px) are embedded; JPEG (quality 85) when it is at most a third of the PNG
+  size and the image has no alpha and ≥ 8 bits, otherwise PNG. `src/export/imagecrop.ts`.
 - `xlink:href` instead of SVG 2 `href` for images (older renderers).
 - **.svgz option** (gzip-compressed SVG, ~5× smaller) in "Erweitert", to test
   whether the whiteboard tool accepts it. Its docs list SVG but not SVGZ, and its help centre

@@ -31,6 +31,7 @@ import {
   type PatternDef,
   type StrokeStyle,
 } from "./ir";
+import { encodeVisibleImage } from "./imagecrop";
 import { encodePath } from "./pathdata";
 
 export interface ClipMm {
@@ -419,10 +420,13 @@ export function collect(mupdf: typeof MuPDF, page: MuPDF.Page, opts: CollectOpti
       const bbox = transformRect(m, { x0: 0, y0: 0, x1: 1, y1: 1 });
       const clipId = clipFor(bbox);
       if (clipId === undefined) return;
-      const pix = image.toPixmap();
-      const png = pix.asPNG();
-      pix.destroy();
-      sink.push({ kind: "image", href: `data:image/png;base64,${base64(png)}`, matrix: m, alpha, bbox, clip: clipId });
+      // Only the visible pixels are embedded (ADR 0005). Pattern tiles are drawn in
+      // pattern space and repeat, so their images are kept whole.
+      const visible = recording ? { x0: -Infinity, y0: -Infinity, x1: Infinity, y1: Infinity } : intersect(top().rect, area);
+      const img = encodeVisibleImage(mupdf, image, m, visible, base64);
+      if (!img) return;
+      const shown = transformRect(img.matrix, { x0: 0, y0: 0, x1: 1, y1: 1 });
+      sink.push({ kind: "image", href: img.href, matrix: img.matrix, alpha, bbox: shown, clip: clipId });
     },
     fillImageMask() {
       if (!suppress) warn("Bildmaske");

@@ -24,6 +24,9 @@ double-click. No server, no upload, no installation.
    length), each on its own Sheet with a Margin, cut marks and a label. Saved as numbered
    single PDFs into a folder, or as one multipage PDF (ADR 0013).
 
+Scanned Plans (pages that are images) work too: the PDF keeps only the pixels inside the
+Clip, and the SVG embeds only the part of the image inside it (ADR 0005).
+
 ## Roadmap
 
 - [x] Optimised SVG export (merging, real text, hatching, clip shapes)
@@ -32,6 +35,7 @@ double-click. No server, no upload, no installation.
 - [ ] ~~Font substitution dialog~~ (not needed so far, ADR 0012)
 - [x] UI overhaul (ADR 0012)
 - [x] Tiled Export for printing at real size (ADR 0013)
+- [x] Scanned Plans: images cropped to the Clip in the SVG too (#2)
 - [ ] Named presets for export settings (#5)
 
 ## Development
