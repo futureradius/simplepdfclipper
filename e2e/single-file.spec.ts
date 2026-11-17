@@ -155,6 +155,7 @@ test("opens from file://, snaps the Clip in the precision view and exports an SV
   await page.screenshot({ path: "test-results/app.png" });
   await page.locator("#about-open").click();
   await expect(page.locator("#about")).toContainText("github.com/futureradius/simplepdfclipper");
+  await expect(page.locator("#shortcuts")).toContainText("Ganzen Plan zeigen");
   await page.screenshot({ path: "test-results/about.png" });
   await page.locator("#about-close").click();
   expect(errors).toEqual([]);
