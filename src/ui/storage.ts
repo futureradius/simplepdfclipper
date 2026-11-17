@@ -1,8 +1,9 @@
-// Remembers the last Clip in this browser (ADR 0007). Storage may be unavailable
-// (e.g. strict privacy settings), so every access is guarded.
+// Remembers the last Clip, the last export settings and the Presets in this browser
+// (ADR 0007, 0015). Storage may be unavailable (e.g. strict privacy settings), so
+// every access is guarded.
 
 import type { ClipMm } from "../export/index";
-import type { AxisSetting, TileSettings } from "../export/tilegrid";
+import { readPresetList, sanitizeSettings, type ExportSettings, type Preset } from "./presets";
 
 const KEY = "simplepdfclipper.lastClip";
 
@@ -26,43 +27,53 @@ export function storeClip(clip: ClipMm): void {
   }
 }
 
-// ---- Tiled Export settings (ADR 0013) ---------------------------------------
+// ---- Export settings and Presets (ADR 0007, 0013, 0015) ---------------------------
 
-const TILES_KEY = "simplepdfclipper.tileSettings";
+const SETTINGS_KEY = "simplepdfclipper.exportSettings";
+/** Before Presets only the Tiled Export settings were remembered, under this key. */
+const OLD_TILES_KEY = "simplepdfclipper.tileSettings";
+const PRESETS_KEY = "simplepdfclipper.presets";
 
-/** Stored settings merged over the defaults; anything malformed falls back to the default. */
-export function loadTileSettings(defaults: TileSettings): TileSettings {
+/** The last export settings; anything malformed falls back to the default. */
+export function loadExportSettings(): ExportSettings {
   try {
-    const raw = localStorage.getItem(TILES_KEY);
-    if (!raw) return structuredClone(defaults);
-    const s = JSON.parse(raw) as Partial<TileSettings>;
-    const pick = <K extends keyof TileSettings>(k: K, ok: (v: unknown) => boolean): TileSettings[K] =>
-      ok(s[k]) ? (s[k] as TileSettings[K]) : structuredClone(defaults[k]);
-    const num = (v: unknown) => typeof v === "number" && Number.isFinite(v) && v >= 0;
-    const axis = (v: unknown) => {
-      const a = v as Partial<AxisSetting> | undefined;
-      return !!a && (a.lead === "count" || a.lead === "length") && num(a.count) && num(a.lengthMm);
-    };
-    return {
-      enabled: pick("enabled", (v) => typeof v === "boolean"),
-      mode: pick("mode", (v) => v === "paper" || v === "free"),
-      format: pick("format", (v) => ["A4", "A3", "A2", "A1", "A0", "custom"].includes(v as string)),
-      customWidthMm: pick("customWidthMm", num),
-      customHeightMm: pick("customHeightMm", num),
-      orientation: pick("orientation", (v) => v === "auto" || v === "portrait" || v === "landscape"),
-      columns: pick("columns", axis),
-      rows: pick("rows", axis),
-      marginMm: pick("marginMm", num),
-      output: pick("output", (v) => v === "files" || v === "multipage"),
-    };
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (raw) return sanitizeSettings(JSON.parse(raw));
+    const old = localStorage.getItem(OLD_TILES_KEY);
+    return sanitizeSettings(old ? { tiles: JSON.parse(old) } : {});
   } catch {
-    return structuredClone(defaults);
+    return sanitizeSettings({});
   }
 }
 
-export function storeTileSettings(s: TileSettings): void {
+export function storeExportSettings(s: ExportSettings): void {
   try {
-    localStorage.setItem(TILES_KEY, JSON.stringify(s));
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
+  } catch {
+    // ignore
+  }
+}
+
+export interface StoredPresets {
+  presets: Preset[];
+  /** The Preset last picked in the dropdown; undefined: Standard. */
+  selected: string | undefined;
+}
+
+export function loadPresets(): StoredPresets {
+  try {
+    const raw = localStorage.getItem(PRESETS_KEY);
+    if (!raw) return { presets: [], selected: undefined };
+    const d = JSON.parse(raw) as { presets?: unknown; selected?: unknown };
+    return { presets: readPresetList(d.presets), selected: typeof d.selected === "string" ? d.selected : undefined };
+  } catch {
+    return { presets: [], selected: undefined };
+  }
+}
+
+export function storePresets(p: StoredPresets): void {
+  try {
+    localStorage.setItem(PRESETS_KEY, JSON.stringify(p));
   } catch {
     // ignore
   }

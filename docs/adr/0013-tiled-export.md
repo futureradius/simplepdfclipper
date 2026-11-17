@@ -50,7 +50,7 @@ button is disabled while it is switched on, with a note and tooltip saying why.
 - **Preview:** the Tile grid with Tile names is drawn over the Clip in the precision
   view; the minimap (ADR 0012) shows the cut lines only, without names.
 - **Remembered** like the Clip (ADR 0007): on/off, mode, format, orientation, both
-  axes' leading field and value, Margin, output mode. Named presets: issue #5.
+  axes' leading field and value, Margin, output mode. Named Presets: ADR 0015.
 
 ## Implementation (2026-11-10)
 

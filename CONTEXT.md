@@ -73,6 +73,12 @@ _Avoid_: edge, overlap (no content is repeated between Tiles)
 **Tile label**
 A small note in the Margin naming the Tile (e.g. "B3") and its source.
 
+**Preset**
+A named copy of all export settings in step 3: Tiled Export setup and SVG options,
+never the Clip. Only the user's own, kept in the browser, shareable as a JSON file.
+"Standard" (the factory settings) is not a Preset (ADR 0015). UI: "Vorlage".
+_Avoid_: profile, template (in code and docs)
+
 **Test Plan**
 A generated stand-in for a real schedule (1188.9 × 14270.9 mm with UserUnit like the real one; dense vector lines, bars and
 small text, ~4 MB). `npm run testplan`. Used for development, measurements and tests. Never committed.

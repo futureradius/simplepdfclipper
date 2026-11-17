@@ -27,6 +27,9 @@ double-click. No server, no upload, no installation.
    into Tiles by paper format (A4–A0 or custom) or freely (columns/rows by count or by
    length), each on its own Sheet with a Margin, cut marks and a label. Saved as numbered
    single PDFs into a folder, or as one multipage PDF (ADR 0013).
+7. Setups you use often can be saved as named Presets ("Vorlage" in step 3, ✎ to
+   save, rename, delete, and to export or import them as a JSON file for colleagues).
+   Picking one sets all export settings at once; the Clip stays (ADR 0015).
 
 Scanned Plans (pages that are images) work too: the PDF keeps only the pixels inside the
 Clip, and the SVG embeds only the part of the image inside it (ADR 0005).
@@ -43,7 +46,7 @@ Clip, and the SVG embeds only the part of the image inside it (ADR 0005).
 - [x] Rotated pages (`/Rotate`), exported upright (#16)
 - [x] Minimap and whole-Plan start view (#4)
 - [x] Multi-page PDFs: page picker, one page per export (#1)
-- [ ] Named presets for export settings (#5)
+- [x] Named presets for export settings (#5)
 
 ## Development
 
