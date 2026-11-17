@@ -78,4 +78,20 @@ pattern space). The same scan: 0.51 MB. Tests: `src/export/imagecrop.test.ts`.
 In the PDF the redacted image keeps its full pixel size (mostly white), so a small Clip
 of a JPEG scan can be a little larger than the scan itself (2.0 vs. 1.6 MB). Accepted.
 
-Pages with `/Rotate` still fail on PDF export: see issue #16.
+## Rotated pages (2026-11-17)
+
+Pages with `/Rotate` (90/180/270, e.g. landscape scans stored as portrait) used to be
+refused. The Clip is always chosen on the page as displayed (MuPDF page space includes
+the rotation), and the redaction bands are already in that space. Step 3 now builds the
+new content matrix from the page's own transform (`PDFPage.getTransform()`: UserUnit,
+rotation, y flip), then moves the Clip's corner to the origin, y up, in units of the new
+page. The exported page is upright with `/Rotate 0` (overrides an inherited value).
+For unrotated pages this is the same matrix as before. Patterns get the full matrix too.
+
+Pitfall found on the way: matrix numbers below 1e-6 (float leftovers such as
+`-1.1e-13`) were written in JS exponent notation, which PDF can't read, so the whole
+page came out blank. Such numbers are now written as 0. This affected unrotated pages too.
+
+Tests: `src/export/rotate.test.ts` (pages at 0/90/180/270 with an image, shapes, hatch
+and text: PDF, Tile and SVG match the displayed area; text outside removed; no exponent
+notation), `e2e/rotated.spec.ts`.
