@@ -1,11 +1,12 @@
 import { startEngine } from "./engine/client";
 import type { PlanInfo } from "./engine/protocol";
-import type { ClipMm, MergeMode } from "./export/index";
+import type { ClipMm } from "./export/index";
 import { chooseFolder, chooseSaveTarget, download, saveFile, writeToFolder, type DirectoryHandle } from "./ui/save";
 import { rowName, tiles, type TileGrid } from "./export/tilegrid";
 import { TilesPanel } from "./ui/tilespanel";
 import { zip, type ZipEntry } from "./ui/zip";
-import { loadStoredClip, storeClip } from "./ui/storage";
+import { loadExportSettings, loadStoredClip, storeClip } from "./ui/storage";
+import { PresetsPanel } from "./ui/presetspanel";
 import { dragClip, type Handle, type Point } from "./ui/clipdrag";
 import { Minimap } from "./ui/minimap";
 import { exportBase, PagePicker, sourceLabel, type PageSize } from "./ui/pagepicker";
@@ -128,11 +129,14 @@ function applyDrag(handle: Handle, start: ClipMm, from: Point, to: Point, altKey
   return guides;
 }
 
-// ---- Tiled Export settings and grid preview (ADR 0013) -------------------------
-const tilesPanel = new TilesPanel(() => {
+// ---- Export settings, Presets (ADR 0015), Tile grid preview (ADR 0013) ------------
+const exportSettings = loadExportSettings();
+const tilesPanel = new TilesPanel(exportSettings.tiles, () => {
+  presets.changed();
   showTileGrid();
   updateButtons();
 });
+const presets = new PresetsPanel(tilesPanel, exportSettings.svg);
 
 /** The current Tile grid, if Tiled Export is on and the settings are valid. */
 function currentGrid(): TileGrid | undefined {
@@ -182,7 +186,7 @@ $("zoom-width").addEventListener("click", showPlanWidth);
 
 // ---- Keyboard ----------------------------------------------------------------
 window.addEventListener("keydown", (e) => {
-  if (!plan || about.open || picker.isOpen || e.ctrlKey || e.metaKey) return;
+  if (!plan || document.querySelector("dialog[open]") || e.ctrlKey || e.metaKey) return;
   const t = e.target as HTMLElement;
   if (t.closest("input, textarea, select")) return; // typing in a field
   const step = e.shiftKey ? 1 : 0.1;
@@ -435,8 +439,7 @@ function note(text: string, cls = ""): void {
 
 exportButton.addEventListener("click", async () => {
   if (!plan) return;
-  const mergeMode = (document.querySelector('input[name="merge"]:checked') as HTMLInputElement).value as MergeMode;
-  const textAsPaths = $<HTMLInputElement>("text-paths").checked;
+  const { mergeMode, textAsPaths } = presets.current().svg;
   busy = true;
   updateButtons();
   status.textContent = "SVG wird berechnet…";

@@ -1,6 +1,6 @@
 // The Tiled Export controls in step 3 (ADR 0013): Paper format or free Tile grid,
-// Margin, output mode, and a summary of the resulting Sheets. Settings are
-// remembered (ADR 0007).
+// Margin, output mode, and a summary of the resulting Sheets. The owner stores the
+// settings and applies Presets (ADR 0007, 0015).
 //
 // Free grid, per axis: two linked fields (count ⇄ length). The field edited last
 // leads and keeps its value when the Clip changes; the other one shows the result
@@ -9,7 +9,6 @@
 import type { ClipMm } from "../export/index";
 import {
   computeTileGrid,
-  DEFAULT_TILE_SETTINGS,
   MANY_SHEETS,
   paperSize,
   sheetCount,
@@ -18,7 +17,6 @@ import {
   type TileGrid,
   type TileSettings,
 } from "../export/tilegrid";
-import { loadTileSettings, storeTileSettings } from "./storage";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const de = (v: number, digits = 1) => v.toLocaleString("de-DE", { maximumFractionDigits: digits });
@@ -40,8 +38,9 @@ export class TilesPanel {
   private clip: ClipMm = { x: 0, y: 0, width: 0, height: 0 };
   private readonly axes: AxisFields[];
 
-  constructor(private readonly onChange: () => void) {
-    this.settings = loadTileSettings(DEFAULT_TILE_SETTINGS);
+  /** `onChange` runs after every change by hand; `settings` is then the new state. */
+  constructor(initial: TileSettings, private readonly onChange: () => void) {
+    this.settings = structuredClone(initial);
     this.axes = [
       { key: "columns", count: $("tiles-cols"), length: $("tiles-col-w"), rest: $("tiles-cols-rest"), lastLabel: "letzte Spalte" },
       { key: "rows", count: $("tiles-rows"), length: $("tiles-row-h"), rest: $("tiles-rows-rest"), lastLabel: "letzte Zeile" },
@@ -54,6 +53,14 @@ export class TilesPanel {
   update(clip: ClipMm): void {
     this.clip = clip;
     this.refresh();
+  }
+
+  /** Replace all settings (a Preset was picked), show them and report the change. */
+  apply(settings: TileSettings): void {
+    Object.assign(this.settings, structuredClone(settings));
+    this.populate();
+    this.refresh();
+    this.onChange();
   }
 
   // ---- Setup ------------------------------------------------------------------
@@ -70,15 +77,15 @@ export class TilesPanel {
     $<HTMLInputElement>("tiles-margin").value = fmt(s.marginMm);
     for (const a of this.axes) {
       const axis = s[a.key];
-      if (axis.lead === "count") a.count.value = String(axis.count);
-      else a.length.value = fmt(axis.lengthMm);
+      // The derived field is filled in by refresh() once there is a Clip.
+      a.count.value = axis.lead === "count" ? String(axis.count) : "";
+      a.length.value = axis.lead === "length" ? fmt(axis.lengthMm) : "";
     }
   }
 
   private bind(): void {
     const s = this.settings;
     const changed = () => {
-      storeTileSettings(s);
       this.refresh();
       this.onChange();
     };
@@ -196,7 +203,7 @@ export class TilesPanel {
         // Store what is actually used, so a clamped value is not restored next time.
         if (byCount) axis.count = count;
         else axis.lengthMm = count === 1 ? axis.lengthMm : len;
-        storeTileSettings(this.settings);
+        this.onChange();
       }
     }
   }

@@ -210,6 +210,27 @@
       table.keys td:first-child { white-space: nowrap; }
       dialog h3 { margin: 16px 0 6px; font-size: 14px; }
       dialog .foot { display: flex; justify-content: flex-end; padding: 12px 16px 16px; }
+      /* ---- Presets (ADR 0015) ------------------------------------------------------ */
+      .preset-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; margin: 0 0 12px; }
+      .preset-row label { font-size: 12px; color: var(--muted); }
+      .preset-row .input { border: 1px solid var(--line-strong); border-radius: 6px; background: #fff; }
+      .preset-row .input:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+      .preset-row select { width: 100%; border: 0; background: transparent; padding: 6px; outline: none; }
+      .preset-row .btn { width: 34px; padding: 0; }
+      dialog#presets { width: min(520px, calc(100% - 32px)); }
+      .preset-list { list-style: none; margin: 14px 0 0; padding: 0; border-top: 1px solid var(--line); max-height: min(40vh, 320px); overflow: hidden auto; }
+      .preset-list li { display: flex; align-items: center; gap: 6px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+      .preset-list .name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+      .preset-list li.current span.name { font-weight: 600; color: var(--accent); }
+      .preset-list input.name { border: 1px solid var(--accent); border-radius: 6px; padding: 5px 8px; outline: none; }
+      .preset-list .btn { height: 28px; padding: 0 10px; font-size: 13px; }
+      #presets-empty { margin: 14px 0 0; }
+      .preset-new { display: grid; gap: 8px; margin-top: 16px; }
+      .preset-new input { border: 1px solid var(--line-strong); border-radius: 6px; padding: 6px 8px; outline: none; }
+      .preset-new input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+      .preset-new .btn { white-space: normal; height: auto; min-height: 34px; }
+      #presets-msg { margin: 12px 0 0; font-size: 13px; }
+      dialog#presets .foot { gap: 8px; }
       /* ---- Page picker (ADR 0014) ------------------------------------------------ */
       .pager { display: flex; align-items: center; gap: 4px; margin: 8px 0 4px; }
       .pager[hidden] { display: none; }
@@ -296,6 +317,11 @@
 
         <section class="step">
           <h2><span class="n">3</span>Export</h2>
+          <div class="preset-row">
+            <label for="preset">Vorlage</label>
+            <div class="input"><select id="preset"></select></div>
+            <button class="btn" id="presets-open" title="Vorlagen verwalten" aria-label="Vorlagen verwalten">✎</button>
+          </div>
           <label class="switch tiles-switch"><input id="tiles-on" type="checkbox" /> Auf Blätter aufteilen (Kacheln)</label>
           <div id="tiles-panel" hidden>
             <div class="seg" role="radiogroup" aria-label="Aufteilen nach">
@@ -407,6 +433,28 @@
         <div class="thumbs" id="pages-grid"></div>
       </div>
       <div class="foot"><button class="btn" id="pages-cancel">Abbrechen</button></div>
+    </dialog>
+
+    <dialog id="presets" aria-labelledby="presets-title">
+      <div class="body">
+        <h2 id="presets-title">Vorlagen</h2>
+        <div class="muted">Eine Vorlage merkt sich alle Export-Einstellungen (Kacheln und SVG-Optionen), nicht den Ausschnitt. Vorlagen bleiben in diesem Browser; zum Weitergeben exportieren.</div>
+        <ul class="preset-list" id="presets-list"></ul>
+        <p class="muted" id="presets-empty">Noch keine eigenen Vorlagen.</p>
+        <div class="preset-new">
+          <input id="preset-name" type="text" placeholder="Name, z. B. Plotter A0" aria-label="Name der neuen Vorlage" />
+          <button class="btn primary" id="preset-save">Aktuelle Einstellungen als neue Vorlage speichern</button>
+          <button class="btn" id="preset-overwrite" hidden></button>
+        </div>
+        <p id="presets-msg" role="status" hidden></p>
+      </div>
+      <div class="foot">
+        <button class="btn" id="presets-export">Exportieren…</button>
+        <button class="btn" id="presets-import">Importieren…</button>
+        <span class="spacer"></span>
+        <button class="btn" id="presets-close">Schließen</button>
+      </div>
+      <input id="presets-file" type="file" accept=".json,application/json" hidden />
     </dialog>
 
     <dialog id="about">
