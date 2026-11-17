@@ -205,6 +205,10 @@
       dialog h2 { margin: 0 0 4px; font-size: 18px; }
       dialog p { margin: 10px 0; }
       dialog a { color: var(--accent); }
+      table.keys { border-collapse: collapse; margin: 4px 0 12px; font-size: 13px; }
+      table.keys td { padding: 3px 12px 3px 0; vertical-align: top; }
+      table.keys td:first-child { white-space: nowrap; }
+      dialog h3 { margin: 16px 0 6px; font-size: 14px; }
       dialog .foot { display: flex; justify-content: flex-end; padding: 12px 16px 16px; }
     </style>
   </head>
@@ -257,8 +261,7 @@
           <div class="muted" id="snap-status"></div>
           <p class="hint">
             Kanten und Ecken ziehen. <kbd>Alt</kbd> beim Ziehen: frei platzieren.<br />
-            Pfeiltasten verschieben um 0,1 mm, mit <kbd>Shift</kbd> um 1 mm.<br />
-            Ansicht: <kbd>1</kbd> ganzer Plan, <kbd>2</kbd> Planbreite, <kbd>3</kbd> 1:1, <kbd>F</kbd> Ausschnitt.
+            Pfeiltasten verschieben um 0,1 mm, mit <kbd>Shift</kbd> um 1 mm.
           </p>
         </section>
 
@@ -373,6 +376,16 @@
         <h2>simple pdf clipper</h2>
         <div class="muted" id="version"></div>
         <p>Schneidet einen genauen Ausschnitt aus großen Vektor-PDFs und speichert ihn als schlankes SVG oder als PDF, in dem alles außerhalb des Ausschnitts wirklich entfernt ist. Läuft vollständig lokal; der Plan verlässt diesen Computer nicht.</p>
+        <h3>Tastenkürzel</h3>
+        <table class="keys" id="shortcuts">
+          <tr><td><kbd>1</kbd></td><td>Ganzen Plan zeigen</td></tr>
+          <tr><td><kbd>2</kbd></td><td>Ganze Planbreite zeigen</td></tr>
+          <tr><td><kbd>3</kbd></td><td>Originalgröße (1:1)</td></tr>
+          <tr><td><kbd>F</kbd></td><td>Ganzen Ausschnitt zeigen</td></tr>
+          <tr><td><kbd>+</kbd> <kbd>−</kbd></td><td>Vergrößern, verkleinern (auch Mausrad)</td></tr>
+          <tr><td><kbd>←</kbd> <kbd>↑</kbd> <kbd>→</kbd> <kbd>↓</kbd></td><td>Ausschnitt um 0,1 mm verschieben, mit <kbd>Shift</kbd> um 1 mm</td></tr>
+          <tr><td><kbd>Alt</kbd> beim Ziehen</td><td>Kante frei platzieren, ohne Einrasten</td></tr>
+        </table>
         <p>Quellcode: <a href="https://github.com/futureradius/simplepdfclipper" target="_blank" rel="noopener">github.com/futureradius/simplepdfclipper</a></p>
         <p class="muted">
           Lizenz: GNU AGPL-3.0 oder neuer.<br />

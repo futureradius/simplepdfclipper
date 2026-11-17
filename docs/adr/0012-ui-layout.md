@@ -43,6 +43,7 @@ First-time users read the overview column as a control and found the start view
 - **Start view: the whole Plan** (all of the page), centred, with the Clip
   highlighted. Users start with the overview, not "in the thick of it".
 - **Toolbar and keys:** "Ganzer Plan" `1`, "Planbreite" `2`, "1:1" `3`, then
-  "Ausschnitt" `F`. (Before: `0` Planbreite, `1` 1:1.) The hint in step 2 lists them.
+  "Ausschnitt" `F`. (Before: `0` Planbreite, `1` 1:1.) All shortcuts are listed in the
+  About dialog under "Tastenkürzel", not in step 2 (too cluttered there).
 - Code: `src/ui/minimap.ts` (size and visibility rules unit-tested), e2e in
   `e2e/single-file.spec.ts`.
