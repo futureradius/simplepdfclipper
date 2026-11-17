@@ -7,7 +7,8 @@ vector PDF and SVG.
 ## Glossary
 
 **Plan**
-The input PDF. A single page, vector graphics + text only (not scanned), ~3 MB or more.
+The input PDF. A single page, usually vector graphics + text, ~3 MB or more. Scanned Plans
+(the page is an image) work too.
 The reference case is a rail construction schedule: 1188.9 mm wide × 14270.9 mm tall, just over 3 MB, opens in ~2.4 s.
 
 **UserUnit**
@@ -30,7 +31,8 @@ A horizontal or vertical line or text edge already in the Plan (grid lines, row
 borders, date column boundaries) that a Clip edge can snap to.
 
 **Export**
-Writing the Clip to a file. Always vector, never raster. Always 1:1. Either one page
+Writing the Clip to a file. Never rasterised: vectors and text stay vectors and text,
+images in the Plan are kept as images, cut to the Clip. Always 1:1. Either one page
 that is exactly the Clip (PDF and SVG), or a **Tiled Export** (PDF only). Content outside
 the Clip (or outside the Tile) is actually removed, not just hidden.
 
