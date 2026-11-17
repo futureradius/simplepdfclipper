@@ -6,7 +6,8 @@ import { rowName, tiles, type TileGrid } from "./export/tilegrid";
 import { TilesPanel } from "./ui/tilespanel";
 import { zip, type ZipEntry } from "./ui/zip";
 import { loadStoredClip, storeClip } from "./ui/storage";
-import { CURSORS, dragClip, hitTest, type Handle, type Point } from "./ui/clipdrag";
+import { dragClip, type Handle, type Point } from "./ui/clipdrag";
+import { Minimap } from "./ui/minimap";
 import { snapClip, type Guide, type SnapIndex } from "./ui/snap";
 import { Viewer, type ViewRect } from "./ui/viewer";
 
@@ -16,7 +17,6 @@ const MB = 1_000_000;
 const WHITEBOARD_RECOMMENDED = 2 * MB;
 /** Typical whiteboard tools reject files above this. */
 const WHITEBOARD_LIMIT = 45 * MB;
-const GRAB_PX = 8;
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const fmt = (v: number) => v.toFixed(1);
@@ -43,6 +43,21 @@ let plan: { name: string; fileName: string; widthMm: number; heightMm: number } 
 let clip: ClipMm = { x: 0, y: 0, width: 0, height: 0 };
 let snapIndex: SnapIndex | undefined;
 const snapToggle = $<HTMLInputElement>("snap");
+
+// ---- Minimap (ADR 0012) ----------------------------------------------------
+const minimap = new Minimap(
+  {
+    root: $("minimap"),
+    canvas: $<HTMLCanvasElement>("overview-canvas"),
+    clipBox: $("clip-box"),
+    viewBox: $("view-box"),
+    tileGrid: document.getElementById("tile-grid") as unknown as SVGSVGElement,
+    collapse: $<HTMLButtonElement>("minimap-collapse"),
+    expand: $<HTMLButtonElement>("minimap-expand"),
+  },
+  $("viewer"),
+  (p) => viewer.centerOn(p),
+);
 
 const fields = {
   x: $<HTMLInputElement>("clip-x"),
@@ -71,7 +86,7 @@ function setClip(c: ClipMm, from: "fields" | "other" = "other", guides: Guide[] 
     fields.width.value = fmt(clip.width);
     fields.height.value = fmt(clip.height);
   }
-  placeBox($("clip-box"), { x0: clip.x, y0: clip.y, x1: clip.x + clip.width, y1: clip.y + clip.height });
+  minimap.setClip(clip);
   viewer.setClip(clip, guides);
   storeClip(clip);
   tilesPanel.update(clip);
@@ -86,7 +101,7 @@ for (const input of Object.values(fields)) {
   input.addEventListener("change", () => setClip(clip)); // normalise display on blur
 }
 
-/** Drag on a Clip handle (from the viewer or the overview), with snapping. */
+/** Drag on a Clip handle in the precision view, with snapping. */
 function applyDrag(handle: Handle, start: ClipMm, from: Point, to: Point, altKey: boolean, visible: ViewRect, tolMm: number): Guide[] {
   if (!plan) return [];
   let c = dragClip(start, handle, from, to, { width: plan.widthMm, height: plan.heightMm });
@@ -114,41 +129,15 @@ function currentGrid(): TileGrid | undefined {
 
 function showTileGrid(): void {
   const g = currentGrid();
-  const svg = $("tile-grid");
   if (!g || !plan) {
     viewer.setTiles(undefined);
-    svg.replaceChildren();
+    minimap.setTiles(undefined);
     return;
   }
   const xs = [clip.x, ...g.columns.map((c) => clip.x + c.start + c.length)];
   const ys = [clip.y, ...g.rows.map((r) => clip.y + r.start + r.length)];
-  const name = (r: number, c: number) => rowName(r) + String(c + 1);
-  viewer.setTiles({ xs, ys, name });
-
-  // Overview: thin dashed cut lines, names where a Tile is large enough.
-  const k = overviewScale();
-  const ns = "http://www.w3.org/2000/svg";
-  const parts: SVGElement[] = [];
-  const line = (x1: number, y1: number, x2: number, y2: number) => {
-    const l = document.createElementNS(ns, "line");
-    l.setAttribute("x1", String(x1 * k));
-    l.setAttribute("y1", String(y1 * k));
-    l.setAttribute("x2", String(x2 * k));
-    l.setAttribute("y2", String(y2 * k));
-    parts.push(l);
-  };
-  for (const x of xs.slice(1, -1)) line(x, ys[0]!, x, ys.at(-1)!);
-  for (const y of ys.slice(1, -1)) line(xs[0]!, y, xs.at(-1)!, y);
-  for (let r = 0; r < ys.length - 1; r++)
-    for (let c = 0; c < xs.length - 1; c++) {
-      if ((xs[c + 1]! - xs[c]!) * k < 22 || (ys[r + 1]! - ys[r]!) * k < 14) continue;
-      const t = document.createElementNS(ns, "text");
-      t.setAttribute("x", String(xs[c]! * k + 3));
-      t.setAttribute("y", String(ys[r]! * k + 10));
-      t.textContent = name(r, c);
-      parts.push(t);
-    }
-  svg.replaceChildren(...parts);
+  viewer.setTiles({ xs, ys, name: (r, c) => rowName(r) + String(c + 1) });
+  minimap.setTiles({ xs, ys });
 }
 
 // ---- Precision view ------------------------------------------------------
@@ -167,11 +156,11 @@ const viewer = new Viewer($<HTMLCanvasElement>("viewer-canvas"), {
   viewChanged(visible, zoomPercent) {
     $("zoom-label").textContent = `${zoomPercent < 10 ? de(zoomPercent, 1) : Math.round(zoomPercent)} %`;
     if (!plan) return;
-    placeBox($("view-box"), visible);
-    keepInOverview(visible);
+    minimap.setView(visible);
   },
 });
 const showPlanWidth = () => viewer.fitWidth(viewer.visible().y0);
+$("zoom-plan").addEventListener("click", () => viewer.fitPlan());
 $("zoom-in").addEventListener("click", () => viewer.zoomBy(1.5));
 $("zoom-out").addEventListener("click", () => viewer.zoomBy(1 / 1.5));
 $("zoom-100").addEventListener("click", () => viewer.zoomTo100());
@@ -193,10 +182,13 @@ window.addEventListener("keydown", (e) => {
     case "-":
       viewer.zoomBy(1 / 1.5);
       break;
-    case "0":
+    case "1":
+      viewer.fitPlan();
+      break;
+    case "2":
       showPlanWidth();
       break;
-    case "1":
+    case "3":
       viewer.zoomTo100();
       break;
     case "f":
@@ -219,64 +211,6 @@ window.addEventListener("keydown", (e) => {
       return;
   }
   e.preventDefault();
-});
-
-// ---- Overview (navigator) --------------------------------------------------
-const overview = $("overview");
-const overviewCanvas = $<HTMLCanvasElement>("overview-canvas");
-/** Overview CSS px per mm (the canvas is scaled to the column width). */
-const overviewScale = () => (plan ? overviewCanvas.clientWidth / plan.widthMm : 1);
-
-function placeBox(el: HTMLElement, r: ViewRect): void {
-  const s = overviewScale();
-  const x0 = Math.max(0, r.x0) * s;
-  const y0 = Math.max(0, r.y0) * s;
-  el.style.left = `${x0}px`;
-  el.style.top = `${y0}px`;
-  el.style.width = `${Math.max(3, Math.min(r.x1 * s, overviewCanvas.clientWidth) - x0)}px`;
-  el.style.height = `${Math.max(3, Math.min(r.y1 * s, overviewCanvas.clientHeight) - y0)}px`;
-}
-
-function keepInOverview(r: ViewRect): void {
-  const s = overviewScale();
-  const top = r.y0 * s;
-  const bottom = r.y1 * s;
-  if (top < overview.scrollTop || bottom > overview.scrollTop + overview.clientHeight)
-    overview.scrollTop = (top + bottom) / 2 - overview.clientHeight / 2;
-}
-
-const overviewPoint = (e: MouseEvent): Point => {
-  const r = overviewCanvas.getBoundingClientRect();
-  const s = overviewScale();
-  return { x: (e.clientX - r.left) / s, y: (e.clientY - r.top) / s };
-};
-
-let ovDrag: { handle: Handle; from: Point; start: ClipMm; screen: Point; moved: boolean } | undefined;
-const ovInner = $("overview-inner");
-ovInner.addEventListener("pointerdown", (e) => {
-  if (!plan || e.button !== 0) return;
-  const p = overviewPoint(e);
-  ovDrag = { handle: hitTest(clip, p, GRAB_PX / overviewScale()), from: p, start: { ...clip }, screen: { x: e.clientX, y: e.clientY }, moved: false };
-  ovInner.setPointerCapture(e.pointerId);
-  e.preventDefault();
-});
-ovInner.addEventListener("pointermove", (e) => {
-  if (!plan) return;
-  const p = overviewPoint(e);
-  if (!ovDrag) {
-    ovInner.style.cursor = CURSORS[hitTest(clip, p, GRAB_PX / overviewScale())];
-    return;
-  }
-  if (!ovDrag.moved && Math.hypot(e.clientX - ovDrag.screen.x, e.clientY - ovDrag.screen.y) < 4) return;
-  ovDrag.moved = true;
-  const page = { x0: 0, y0: 0, x1: plan.widthMm, y1: plan.heightMm };
-  applyDrag(ovDrag.handle, ovDrag.start, ovDrag.from, p, e.altKey, page, GRAB_PX / overviewScale());
-});
-ovInner.addEventListener("pointerup", (e) => {
-  if (!ovDrag) return;
-  if (!ovDrag.moved) viewer.centerOn(overviewPoint(e)); // a click navigates
-  else viewer.setClip(clip); // drop guides
-  ovDrag = undefined;
 });
 
 // ---- Open a Plan -----------------------------------------------------------
@@ -315,9 +249,6 @@ async function openPlan(file: File): Promise<void> {
     showDetails(info);
     const preview = await engine.renderPreview();
     const bitmap = await createImageBitmap(new ImageData(preview.pixels as Uint8ClampedArray<ArrayBuffer>, preview.widthPx, preview.heightPx));
-    overviewCanvas.width = preview.widthPx;
-    overviewCanvas.height = preview.heightPx;
-    overviewCanvas.getContext("2d")!.drawImage(bitmap, 0, 0);
 
     $("start").hidden = true;
     $("workspace").hidden = false;
@@ -326,13 +257,14 @@ async function openPlan(file: File): Promise<void> {
     $("export-status").replaceChildren();
     $("result-img").hidden = true;
     viewer.setPlan(plan.widthMm, plan.heightMm, bitmap);
+    minimap.setPlan(plan.widthMm, plan.heightMm, bitmap);
 
     // Restore the last Clip if it fits this Plan (ADR 0007), else a sensible default.
     const stored = loadStoredClip();
     const fits = stored && stored.x + stored.width <= plan.widthMm + 0.05 && stored.y + stored.height <= plan.heightMm + 0.05;
     setClip(fits ? stored : { x: 0, y: 0, width: plan.widthMm, height: Math.min(600, plan.heightMm) });
-    // Start with the Plan's full width, scrolled to the Clip.
-    viewer.fitWidth(clip.y);
+    // Start with the whole Plan in view (ADR 0012): an overview first, not "in the thick of it".
+    viewer.fitPlan();
 
     const secs = ((performance.now() - t0) / 1000).toFixed(1);
     $("plan-info").textContent = `${de(plan.widthMm)} × ${de(plan.heightMm)} mm · geladen in ${secs.replace(".", ",")} s`;

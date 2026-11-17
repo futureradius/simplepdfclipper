@@ -16,7 +16,9 @@ double-click. No server, no upload, no installation.
 2. Double-click it; it opens in Edge.
 3. Open your Plan.
 4. Set the Clip: drag its edges in the precision view (they snap to lines; hold Alt
-   to place freely), draw it in the overview on the right, or type the mm values.
+   to place freely), or type the mm values. The view starts with the whole Plan; the
+   minimap in the bottom-right corner moves the view (keys: `1` whole Plan, `2` Plan
+   width, `3` 1:1, `F` Clip).
 5. Export as SVG (for the whiteboard tool) or as PDF (for documentation; everything outside the
    Clip is removed from the file).
 6. To print a large Clip at real size, switch on "Auf Blätter aufteilen": the Clip is cut
@@ -37,6 +39,7 @@ Clip, and the SVG embeds only the part of the image inside it (ADR 0005).
 - [x] Tiled Export for printing at real size (ADR 0013)
 - [x] Scanned Plans: images cropped to the Clip in the SVG too (#2)
 - [x] Rotated pages (`/Rotate`), exported upright (#16)
+- [x] Minimap and whole-Plan start view (#4)
 - [ ] Named presets for export settings (#5)
 
 ## Development

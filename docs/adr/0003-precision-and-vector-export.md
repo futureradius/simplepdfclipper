@@ -23,7 +23,7 @@ Export is vector only, to PDF and SVG. No raster export.
 
 **Layout:** settings panel (left), precision view (centre), overview as navigator
 (right, shows the Clip in red and the visible area in blue; click to jump, drag to
-draw/move/resize the Clip).
+draw/move/resize the Clip). *Replaced by the minimap, ADR 0012 (2026-11-17).*
 
 **Precision view (`src/ui/viewer.ts`):** canvas, wheel zooms around the cursor
 (2 %–1,700 %, 100 % = real size at 96 dpi), dragging pans; dragging Clip edges or
