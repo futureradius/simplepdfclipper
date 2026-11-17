@@ -129,6 +129,11 @@ export class Viewer {
     this.viewUpdated();
   }
 
+  /** Show the whole Plan, centred (the start view, ADR 0012). */
+  fitPlan(): void {
+    this.fitRect({ x0: 0, y0: 0, x1: this.plan.width, y1: this.plan.height }, 0.02);
+  }
+
   /** Fit the Plan's width into the view, with `topMm` near the top edge. */
   fitWidth(topMm = 0): void {
     this.measure();

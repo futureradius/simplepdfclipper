@@ -48,7 +48,7 @@ button is disabled while it is switched on, with a note and tooltip saying why.
   Sheets an amber warning, never a refusal. Progress ("Kachel 12 von 70") with
   cancel.
 - **Preview:** the Tile grid with Tile names is drawn over the Clip in the precision
-  view and the overview.
+  view; the minimap (ADR 0012) shows the cut lines only, without names.
 - **Remembered** like the Clip (ADR 0007): on/off, mode, format, orientation, both
   axes' leading field and value, Margin, output mode. Named presets: issue #5.
 

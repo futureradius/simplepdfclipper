@@ -47,14 +47,47 @@ test("opens from file://, snaps the Clip in the precision view and exports an SV
   await expect(page.locator("body")).toHaveAttribute("data-snap-ready", "1", { timeout: 60_000 });
   await expect(page.locator("#snap-status")).toContainText("Linien zum Einrasten");
 
-  // Start view: the Plan's full width fills the precision view.
+  // Start view: the whole Plan (ADR 0012); the minimap would only repeat it, so it is hidden.
   const view = (await page.locator("#viewer-canvas").boundingBox())!;
-  const expectedPercent = (view.width / (1188.9 * 1.02) / (96 / 25.4)) * 100;
-  const shownPercent = Number((await page.locator("#zoom-label").innerText()).replace(/[^0-9,]/g, "").replace(",", "."));
-  console.log(`start zoom ${shownPercent} %, expected ${expectedPercent.toFixed(1)} %`);
-  expect(Math.abs(shownPercent - expectedPercent)).toBeLessThan(1.5);
+  const percent = async () => Number((await page.locator("#zoom-label").innerText()).replace(/[^0-9,]/g, "").replace(",", "."));
+  const toPercent = (pxPerMm: number) => (pxPerMm / (96 / 25.4)) * 100;
+  const wholePercent = toPercent(Math.min(view.width / (1188.9 * 1.04), view.height / (14270.9 * 1.04)));
+  console.log(`start zoom ${await percent()} %, expected ${wholePercent.toFixed(2)} %`);
+  expect(Math.abs((await percent()) - wholePercent)).toBeLessThan(0.1);
+  await expect(page.locator("#minimap")).toBeHidden();
   await page.waitForTimeout(600);
   await page.screenshot({ path: "test-results/workspace.png" });
+
+  // Keys 2 (Planbreite), 3 (1:1), 1 (Ganzer Plan).
+  await page.locator("#viewer-canvas").click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press("2");
+  expect(Math.abs((await percent()) - toPercent(view.width / (1188.9 * 1.02)))).toBeLessThan(1.5);
+  await page.keyboard.press("3");
+  expect(await percent()).toBeCloseTo(100, 0);
+
+  // Zoomed in, the minimap appears: the whole Plan, at most 1/3 of the view high and wide.
+  const minimap = page.locator("#minimap");
+  await expect(minimap).toBeVisible();
+  const mm = (await page.locator("#overview-canvas").boundingBox())!;
+  expect(mm.height).toBeLessThanOrEqual(view.height / 3 + 1);
+  expect(mm.width).toBeLessThanOrEqual(view.width / 3 + 1);
+  expect(mm.height / mm.width).toBeCloseTo(14270.9 / 1188.9, 0);
+  await page.screenshot({ path: "test-results/minimap.png" });
+
+  // A click centres the view there: the red view frame moves to the click.
+  await page.mouse.click(mm.x + mm.width / 2, mm.y + mm.height * 0.8);
+  const frame = (await page.locator("#view-box").boundingBox())!;
+  expect(Math.abs(frame.y + frame.height / 2 - (mm.y + mm.height * 0.8))).toBeLessThan(3);
+
+  // Collapse to a round button and back.
+  await page.locator("#minimap-collapse").click();
+  await expect(minimap).toBeHidden();
+  await page.locator("#minimap-expand").click();
+  await expect(minimap).toBeVisible();
+
+  await page.keyboard.press("1");
+  expect(Math.abs((await percent()) - wholePercent)).toBeLessThan(0.1);
+  await expect(minimap).toBeHidden();
 
   // Keyboard: Shift+ArrowRight moves the Clip by 1 mm.
   const xBefore = await num(page, "#clip-x");
@@ -93,15 +126,6 @@ test("opens from file://, snaps the Clip in the precision view and exports an SV
   const free = (await num(page, "#clip-x")) + (await num(page, "#clip-w"));
   expect(Math.abs(free - 706.6)).toBeLessThan(0.5);
   expect(Math.abs(((free - 380) / WEEK_W) % 1)).toBeGreaterThan(0.05); // not on a week line
-
-  // Overview: dragging the right edge of the red box resizes it.
-  await setClip(page, 0, 10, 1188.9, 300);
-  const box = (await page.locator("#clip-box").boundingBox())!;
-  await page.mouse.move(box.x + box.width - 2, box.y + box.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(box.x + box.width - 50, box.y + box.height / 2, { steps: 5 });
-  await page.mouse.up();
-  expect(await num(page, "#clip-w")).toBeLessThan(1000);
 
   // Export.
   await setClip(page, 0, 2000, 1188.9, 600);

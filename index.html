@@ -86,7 +86,7 @@
       #start-error { color: var(--severe-line); }
 
       /* ---- Workspace ----------------------------------------------------------- */
-      .app { flex: 1; min-height: 0; display: grid; grid-template-columns: 320px 1fr 176px; }
+      .app { flex: 1; min-height: 0; display: grid; grid-template-columns: 320px 1fr; }
       .panel { background: var(--surface); border-right: 1px solid var(--line); overflow: hidden auto; padding: 6px 0 18px; }
       .step { padding: 14px 18px 16px; border-bottom: 1px solid var(--line); }
       .step:last-child { border-bottom: 0; }
@@ -169,17 +169,32 @@
       .toolbar .sep { width: 1px; height: 20px; background: var(--line); margin: 0 4px; }
       #zoom-label { min-width: 54px; text-align: center; font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
-      /* ---- Overview ------------------------------------------------------------- */
-      .overview { border-left: 1px solid var(--line); background: var(--surface); display: flex; flex-direction: column; min-height: 0; }
-      .overview h3 { margin: 0; padding: 10px 12px 8px; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
-      #overview { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 0 10px 10px; }
-      #overview-inner { position: relative; user-select: none; touch-action: none; box-shadow: 0 0 0 1px var(--line); }
-      #overview-canvas { display: block; width: 100%; }
-      #clip-box { position: absolute; border: 2px solid var(--accent); background: rgba(37, 99, 235, 0.10); pointer-events: none; }
+      /* ---- Minimap (ADR 0012) -------------------------------------------------- */
+      .minimap {
+        position: absolute; right: 16px; bottom: 16px; padding: 6px;
+        background: rgba(255, 255, 255, 0.97); border: 1px solid var(--line); border-radius: 10px;
+        box-shadow: 0 2px 6px rgba(16, 24, 40, 0.10), 0 12px 32px rgba(16, 24, 40, 0.18);
+      }
+      .minimap[hidden], .minimap-expand[hidden] { display: none; }
+      #minimap-collapse {
+        position: absolute; top: -10px; right: -10px; width: 22px; height: 22px; padding: 0;
+        border-radius: 50%; border: 1px solid var(--line); background: #fff; color: var(--muted);
+        font-size: 13px; line-height: 1; cursor: pointer; box-shadow: var(--shadow);
+      }
+      #minimap-collapse:hover { color: var(--text); background: #eef0f3; }
+      .minimap-expand {
+        position: absolute; right: 16px; bottom: 16px; width: 40px; height: 40px; padding: 0;
+        border-radius: 50%; border: 1px solid var(--line); background: #fff; cursor: pointer;
+        box-shadow: 0 2px 6px rgba(16, 24, 40, 0.10), 0 8px 20px rgba(16, 24, 40, 0.16);
+        display: grid; place-items: center; color: var(--muted);
+      }
+      .minimap-expand:hover { color: var(--text); }
+      #overview-inner { position: relative; user-select: none; touch-action: none; cursor: pointer; box-shadow: 0 0 0 1px var(--line); }
+      #overview-canvas { display: block; }
+      #clip-box { position: absolute; border: 1.5px solid var(--accent); background: rgba(37, 99, 235, 0.12); pointer-events: none; }
       #tile-grid { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
-      #tile-grid line { stroke: var(--accent); stroke-width: 1; stroke-dasharray: 3 2; }
-      #tile-grid text { font: 600 9px "Segoe UI", system-ui, sans-serif; fill: var(--accent); paint-order: stroke; stroke: rgba(255,255,255,.85); stroke-width: 2.5px; }
-      #view-box { position: absolute; border: 1.5px dashed #3d4452; pointer-events: none; }
+      #tile-grid line { stroke: var(--accent); stroke-width: 0.75; }
+      #view-box { position: absolute; border: 2px solid #e5383b; background: rgba(229, 56, 59, 0.06); pointer-events: none; }
 
       /* ---- About ---------------------------------------------------------------- */
       dialog { border: 0; border-radius: 12px; padding: 0; width: min(460px, calc(100% - 32px)); box-shadow: 0 20px 50px rgba(16, 24, 40, 0.25); color: var(--text); }
@@ -241,7 +256,7 @@
           <p class="hint">
             Kanten und Ecken ziehen. <kbd>Alt</kbd> beim Ziehen: frei platzieren.<br />
             Pfeiltasten verschieben um 0,1 mm, mit <kbd>Shift</kbd> um 1 mm.<br />
-            Übersicht rechts: klicken springt hin, ziehen zeichnet neu.
+            Ansicht: <kbd>1</kbd> ganzer Plan, <kbd>2</kbd> Planbreite, <kbd>3</kbd> 1:1, <kbd>F</kbd> Ausschnitt.
           </p>
         </section>
 
@@ -329,23 +344,26 @@
           <span id="zoom-label"></span>
           <button class="btn" id="zoom-in" title="Vergrößern (+)">+</button>
           <span class="sep"></span>
-          <button class="btn" id="zoom-width" title="Ganze Planbreite (0)">Planbreite</button>
+          <button class="btn" id="zoom-plan" title="Ganzen Plan zeigen (1)">Ganzer Plan</button>
+          <button class="btn" id="zoom-width" title="Ganze Planbreite (2)">Planbreite</button>
+          <button class="btn" id="zoom-100" title="Originalgröße (3)">1:1</button>
+          <span class="sep"></span>
           <button class="btn" id="zoom-clip" title="Ganzen Ausschnitt zeigen (F)">Ausschnitt</button>
-          <button class="btn" id="zoom-100" title="Originalgröße (1)">1:1</button>
         </div>
-      </div>
-
-      <aside class="overview">
-        <h3>Übersicht</h3>
-        <div id="overview">
-          <div id="overview-inner">
+        <div class="minimap" id="minimap" hidden>
+          <button id="minimap-collapse" title="Übersicht einklappen" aria-label="Übersicht einklappen">×</button>
+          <div id="overview-inner" title="Klicken oder ziehen, um die Ansicht zu verschieben">
             <canvas id="overview-canvas"></canvas>
             <div id="clip-box"></div>
             <svg id="tile-grid" aria-hidden="true"></svg>
             <div id="view-box"></div>
           </div>
         </div>
-      </aside>
+        <button class="minimap-expand" id="minimap-expand" title="Übersicht zeigen" aria-label="Übersicht zeigen" hidden>
+          <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><rect x="2" y="2" width="14" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="6" y="5" width="6" height="5" fill="none" stroke="#e5383b" stroke-width="1.5"/></svg>
+        </button>
+      </div>
+
     </div>
 
     <dialog id="about">
