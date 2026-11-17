@@ -84,7 +84,6 @@
       .drop h1 { font-size: 20px; margin: 14px 0 6px; }
       .drop p { margin: 6px 0; color: var(--muted); }
       .drop .btn { margin-top: 14px; height: 40px; padding: 0 20px; }
-      #engine-status { margin-top: 14px; font-size: 13px; }
       #start-error { color: var(--severe-line); }
 
       /* ---- Workspace ----------------------------------------------------------- */
@@ -146,8 +145,6 @@
       #tiles-summary p { margin: 0; }
       #tiles-summary p + p { margin-top: 6px; }
       #svg-note { margin: 6px 0 0; }
-      .progress { display: flex; align-items: center; gap: 10px; }
-      .progress .btn { height: 28px; padding: 0 10px; }
       #result-img { display: block; max-width: 100%; max-height: 180px; margin-top: 10px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
       details.advanced { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
       details.advanced summary { cursor: pointer; color: var(--muted); font-size: 13px; }
@@ -254,6 +251,37 @@
       .thumb canvas { display: block; background: #fff; box-shadow: 0 0 0 1px var(--line-strong), 0 1px 3px rgba(16, 24, 40, 0.12); }
       .thumb:not(.ready) canvas { background: #f6f7f9; }
       .thumb .label { font-size: 13px; color: var(--muted); }
+      .thumb .frame { position: relative; }
+      .thumb:not(.ready) .frame::after {
+        content: ""; position: absolute; left: 50%; top: 50%; width: 28px; height: 28px; margin: -14px 0 0 -14px;
+        border: 3px solid var(--line); border-top-color: var(--muted); border-radius: 50%; animation: spin 0.8s linear infinite;
+      }
+      /* ---- Busy window and spinners (ADR 0012) ------------------------------------ */
+      @keyframes spin { to { transform: rotate(360deg); } }
+      @keyframes pulse { 50% { opacity: 0.3; } }
+      dialog#busy { width: max(260px, 20vw); max-width: calc(100% - 32px); border-radius: 16px; opacity: 0; transition: opacity 0.15s; }
+      dialog#busy.shown { opacity: 1; }
+      dialog#busy::backdrop { background: rgba(20, 24, 32, 0); transition: background-color 0.15s; }
+      dialog#busy.shown::backdrop { background: rgba(20, 24, 32, 0.35); }
+      dialog#busy:focus { outline: none; }
+      .busy-body { display: grid; justify-items: center; gap: 10px; padding: 28px 22px 22px; text-align: center; }
+      .busy-spin { width: 40%; height: auto; aspect-ratio: 1; animation: spin 0.8s linear infinite; }
+      .busy-spin circle { fill: none; stroke-width: 5; }
+      .busy-spin .track { stroke: var(--accent-soft); }
+      .busy-spin .arc { stroke: var(--accent); stroke-linecap: round; stroke-dasharray: 42 126; }
+      #busy-text { margin: 6px 0 0; font-weight: 600; font-size: 15px; overflow-wrap: anywhere; }
+      #busy-bar { width: 100%; height: 6px; accent-color: var(--accent); }
+      #busy-time { margin: 0; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+      #busy-cancel { margin-top: 4px; }
+      .btn.busy::before, #snap-status.loading::before {
+        content: ""; flex: 0 0 auto; display: inline-block; width: 1em; height: 1em; border-radius: 50%;
+        border: 2px solid var(--accent-soft); border-top-color: var(--accent); animation: spin 0.8s linear infinite;
+      }
+      .btn.primary.busy::before { border-color: rgba(255, 255, 255, 0.35); border-top-color: #fff; }
+      #snap-status.loading::before { margin-right: 6px; vertical-align: -0.15em; }
+      @media (prefers-reduced-motion: reduce) {
+        .busy-spin, .btn.busy::before, #snap-status.loading::before, .thumb:not(.ready) .frame::after { animation: pulse 1.2s ease-in-out infinite; }
+      }
       .thumb.current .label { color: var(--accent); font-weight: 600; }
     </style>
   </head>
@@ -281,7 +309,6 @@
         <h1>Plan hierher ziehen</h1>
         <p>oder eine PDF-Datei auswählen. Der Plan bleibt auf diesem Computer.</p>
         <button class="btn primary" id="choose" disabled>Plan auswählen…</button>
-        <p id="engine-status">PDF-Engine wird geladen…</p>
         <p id="start-error"></p>
       </div>
     </main>
@@ -455,6 +482,16 @@
         <button class="btn" id="presets-close">Schließen</button>
       </div>
       <input id="presets-file" type="file" accept=".json,application/json" hidden />
+    </dialog>
+
+    <dialog id="busy" closedby="none" aria-labelledby="busy-text">
+      <div class="busy-body">
+        <svg class="busy-spin" viewBox="0 0 50 50" aria-hidden="true"><circle class="track" cx="25" cy="25" r="20" /><circle class="arc" cx="25" cy="25" r="20" /></svg>
+        <p id="busy-text" role="status"></p>
+        <progress id="busy-bar" hidden></progress>
+        <p id="busy-time" aria-label="Bisherige Dauer">0:00</p>
+        <button class="btn" id="busy-cancel" hidden>Abbrechen</button>
+      </div>
     </dialog>
 
     <dialog id="about">

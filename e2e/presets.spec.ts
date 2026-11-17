@@ -14,6 +14,7 @@ async function openPlan(page: Page) {
   await expect(page.locator("#choose")).toBeEnabled({ timeout: 60_000 });
   await page.locator("#file").setInputFiles(PLAN);
   await expect(page.locator("#plan-info")).toContainText("geladen in", { timeout: 60_000 });
+  await expect(page.locator("#busy")).toBeHidden(); // the busy window (ADR 0012) blocks input until gone
 }
 
 test("named export Presets: save, apply, changed, overwrite, remembered, rename, export, import, delete", async ({ page }) => {

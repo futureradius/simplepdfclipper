@@ -47,3 +47,38 @@ First-time users read the overview column as a control and found the start view
   About dialog under "Tastenkürzel", not in step 2 (too cluttered there).
 - Code: `src/ui/minimap.ts` (size and visibility rules unit-tested), e2e in
   `e2e/single-file.spec.ts`.
+
+## Busy window (2026-11-17, issue #26)
+
+While a Document opened or an export ran, the only sign was a short line of text, so
+it was not obvious that the app had accepted the command and was working.
+
+- **A centred window over a dimmed app** for the jobs that block: loading the PDF
+  engine, opening a Plan or a page, SVG export, PDF export and the Tiled Export. It is
+  1/5 of the window width (at least 260 px), with a big spinner, what is happening
+  ("SVG wird berechnet…", "Kachel 3 von 12 (B2)…", "Wird gespeichert…"), for the
+  Tiled Export a progress bar, and the elapsed time ("0:07", counted from the
+  command's start). A modal window rather than a spinner next to the status text:
+  it is seen at once and says plainly that the tool cannot be used right now. Clicks,
+  keys and dropped PDFs are blocked until the job ends.
+- **"Abbrechen" only where the work really stops:** the Tiled Export, between Tiles
+  (`Esc` too; not while saving). The engine cannot interrupt a running call, and
+  restarting the worker and reloading the Plan would take about as long as the 2-5 s
+  SVG/PDF export or Plan opening it would cut short; a button that only hid the
+  window would leave the engine busy, so panning would stall. Those windows have no
+  button.
+- **Timing:** the app is blocked from the first moment (the modal dialog is open but
+  transparent); the window fades in (150 ms) only if the job still runs after
+  400 ms, so fast jobs don't flash it; once visible it stays at least 500 ms, then
+  fades out. The pressed export button shows a small spinner with the same delay.
+  The window closes before a "Save as" dialog opens.
+- **Small inline spinners, no window,** where the tool stays usable: "Einrasten wird
+  vorbereitet…" (only snapping waits) and page-picker thumbnails not drawn yet.
+- In-progress texts live in the window only; the status lines show results and
+  errors. No `progress` cursor.
+- CSS animations only; `prefers-reduced-motion` pulses instead of rotating. With the
+  main-thread engine (ADR 0010 fallback) the delay timer could not fire, so the window
+  shows at once and one frame is awaited before the work starts; it cannot turn
+  there, but it is visible.
+- Code: `src/ui/busy.ts` (timing unit-tested), e2e in `e2e/busy.spec.ts` (tests set
+  `window.__busyDelayMs = 0`) and the cancel steps in `e2e/tiled-export.spec.ts`.
