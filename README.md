@@ -36,6 +36,7 @@ Clip, and the SVG embeds only the part of the image inside it (ADR 0005).
 - [x] UI overhaul (ADR 0012)
 - [x] Tiled Export for printing at real size (ADR 0013)
 - [x] Scanned Plans: images cropped to the Clip in the SVG too (#2)
+- [x] Rotated pages (`/Rotate`), exported upright (#16)
 - [ ] Named presets for export settings (#5)
 
 ## Development
