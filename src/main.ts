@@ -9,6 +9,7 @@ import { loadExportSettings, loadStoredClip, storeClip } from "./ui/storage";
 import { PresetsPanel } from "./ui/presetspanel";
 import { dragClip, onPlan, type Handle, type Point } from "./ui/clipdrag";
 import { Minimap } from "./ui/minimap";
+import { BUSY_TIMING, BusyWindow } from "./ui/busy";
 import { exportBase, PagePicker, sourceLabel, type PageSize } from "./ui/pagepicker";
 import { snapClip, type Guide, type SnapIndex } from "./ui/snap";
 import { Viewer, type ViewRect } from "./ui/viewer";
@@ -31,13 +32,29 @@ const about = $<HTMLDialogElement>("about");
 $("about-open").addEventListener("click", () => about.showModal());
 $("about-close").addEventListener("click", () => about.close());
 
+// ---- Busy window (ADR 0012) --------------------------------------------------
+// Tests set `__busyDelayMs` to see the window even for fast jobs.
+const busyDelay = (window as unknown as { __busyDelayMs?: number }).__busyDelayMs;
+const busyWindow = new BusyWindow(
+  {
+    dialog: $<HTMLDialogElement>("busy"),
+    text: $("busy-text"),
+    time: $("busy-time"),
+    bar: $<HTMLProgressElement>("busy-bar"),
+    cancel: $<HTMLButtonElement>("busy-cancel"),
+  },
+  busyDelay === undefined ? BUSY_TIMING : { ...BUSY_TIMING, delayMs: busyDelay },
+);
+
 // ---- Engine ----------------------------------------------------------------
-const engine = await startEngine().catch((e: unknown) => {
-  $("engine-status").textContent = "";
+await busyWindow.start("PDF-Engine wird geladen…");
+const engine = await startEngine().catch(async (e: unknown) => {
+  await busyWindow.end();
   $("start-error").textContent = `Die PDF-Engine konnte nicht geladen werden: ${String(e)}`;
   throw e;
 });
-$("engine-status").textContent = "";
+void busyWindow.end();
+busyWindow.immediate = engine.mode === "main-thread";
 document.body.dataset.engine = engine.mode;
 
 // ---- State ---------------------------------------------------------------
@@ -278,10 +295,10 @@ async function showPage(doc: { name: string; fileName: string; pages: PageSize[]
   const gen = ++loadGeneration;
   loading = true;
   updateButtons();
-  const status = plan ? $("plan-info") : $("engine-status");
-  status.textContent = doc.pages.length > 1 ? `Seite ${index + 1} wird geöffnet…` : "Plan wird geöffnet…";
+  await busyWindow.start(doc.pages.length > 1 ? `Seite ${index + 1} wird geöffnet…` : "Plan wird geöffnet…");
   snapIndex = undefined;
   delete document.body.dataset.snapReady;
+  const snapStatus = $("snap-status");
   try {
     const info = await engine.openPage(index);
     const preview = await engine.renderPreview();
@@ -311,22 +328,26 @@ async function showPage(doc: { name: string; fileName: string; pages: PageSize[]
 
     const secs = ((performance.now() - t0) / 1000).toFixed(1);
     $("plan-info").textContent = `${de(plan.widthMm)} × ${de(plan.heightMm)} mm · geladen in ${secs.replace(".", ",")} s`;
-    $("engine-status").textContent = "";
     document.body.dataset.page = String(index + 1);
     loading = false;
     updateButtons();
+    void busyWindow.end();
 
-    $("snap-status").textContent = "Einrasten wird vorbereitet…";
+    // The Plan is usable meanwhile; only snapping waits, so a small inline spinner.
+    snapStatus.textContent = "Einrasten wird vorbereitet…";
+    snapStatus.classList.add("loading");
     const t1 = performance.now();
     const targets = await engine.snapTargets();
     if (gen !== loadGeneration) return;
     snapIndex = targets;
     const n = snapIndex.vertical.pos.length + snapIndex.horizontal.pos.length;
-    $("snap-status").textContent = `${n.toLocaleString("de-DE")} Linien zum Einrasten gefunden (${de((performance.now() - t1) / 1000)} s).`;
+    snapStatus.classList.remove("loading");
+    snapStatus.textContent = `${n.toLocaleString("de-DE")} Linien zum Einrasten gefunden (${de((performance.now() - t1) / 1000)} s).`;
     document.body.dataset.snapReady = "1";
   } catch (e) {
     if (gen !== loadGeneration) return;
-    status.textContent = "";
+    void busyWindow.end();
+    snapStatus.classList.remove("loading");
     const msg = `${doc.pages.length > 1 ? `Seite ${index + 1}` : "Der Plan"} konnte nicht geöffnet werden: ${String(e)}`;
     if (plan) $("plan-info").textContent = msg;
     else $("start-error").textContent = msg;
@@ -340,27 +361,26 @@ async function showPage(doc: { name: string; fileName: string; pages: PageSize[]
 
 /** Opens a file: straight away if it has one page, else after the page picker. */
 async function openFile(file: File): Promise<void> {
-  if (picker.isOpen || loading) return;
+  if (picker.isOpen || loading || busyWindow.active) return;
   const t0 = performance.now();
-  const status = plan ? $("plan-info") : $("engine-status");
-  const before = status.textContent;
-  status.textContent = "Plan wird geöffnet…";
+  await busyWindow.start("Plan wird geöffnet…");
   $("start-error").textContent = "";
   let pages: PageSize[];
   try {
     pages = (await engine.openDocument(await file.arrayBuffer())).pages;
     if (pages.length === 0) throw new Error("keine Seiten");
   } catch (e) {
-    status.textContent = plan ? before : "";
+    await busyWindow.end();
     const msg = `Der Plan konnte nicht geöffnet werden: ${String(e)}`;
     if (plan) $("plan-info").textContent = msg;
     else $("start-error").textContent = msg;
     return;
   }
   const doc = { name: file.name.replace(/\.pdf$/i, ""), fileName: file.name, pages };
+  // One page: the same window carries on with opening it.
   if (pages.length === 1) return showPage(doc, 0, t0);
 
-  status.textContent = plan ? before : "";
+  await busyWindow.end();
   const index = await picker.pick(pages, file.name);
   if (index === undefined) {
     // Cancelled: keep the current Plan, or stay on the start screen.
@@ -406,6 +426,7 @@ window.addEventListener("drop", (e) => {
   e.preventDefault();
   dragDepth = 0;
   document.body.classList.remove("dragging");
+  if (busyWindow.active) return; // blocked while busy
   const file = [...(e.dataTransfer?.files ?? [])].find((f) => /\.pdf$/i.test(f.name) || f.type === "application/pdf");
   if (file) void openFile(file);
   else if (!plan) $("start-error").textContent = "Bitte eine PDF-Datei ablegen.";
@@ -446,13 +467,14 @@ exportButton.addEventListener("click", async () => {
   const { mergeMode, textAsPaths } = presets.current().svg;
   busy = true;
   updateButtons();
-  status.textContent = "SVG wird berechnet…";
+  status.replaceChildren();
+  await busyWindow.start("SVG wird berechnet…", { button: exportButton });
   try {
     const r = await engine.exportSvg({ clip, page: plan.page, mergeMode, textAsPaths, reuseShapes: false });
     const blob = new Blob([r.svg as BlobPart], { type: "image/svg+xml" });
     const size = blob.size;
+    void busyWindow.end(); // before a "Save as" dialog can open
 
-    status.replaceChildren();
     note(
       `SVG: ${de(size / MB, 2)} MB · ${r.elements.toLocaleString("de-DE")} Elemente ` +
         `(aus ${r.sourceItems.toLocaleString("de-DE")} PDF-Objekten) · ${de(r.seconds)} s`,
@@ -477,6 +499,7 @@ exportButton.addEventListener("click", async () => {
 
     await saveFile(blob, `${exportBase(plan.name, plan.page, plan.pages.length)}.svg`, "SVG-Grafik", "image/svg+xml", ".svg");
   } catch (e) {
+    void busyWindow.end();
     status.textContent = `SVG-Export fehlgeschlagen: ${String(e)}`;
   } finally {
     busy = false;
@@ -490,11 +513,12 @@ pdfButton.addEventListener("click", async () => {
   if (tilesPanel.settings.enabled) return exportTiles();
   busy = true;
   updateButtons();
-  status.textContent = "PDF wird erstellt…";
+  status.replaceChildren();
+  await busyWindow.start("PDF wird erstellt…", { button: pdfButton });
   try {
     const r = await engine.exportPdf({ clip, page: plan.page, sourceName: sourceLabel(plan.fileName, plan.page, plan.pages.length) });
     const blob = new Blob([r.pdf as BlobPart], { type: "application/pdf" });
-    status.replaceChildren();
+    void busyWindow.end(); // before a "Save as" dialog can open
     note(`PDF: ${de(blob.size / MB, 2)} MB · ${de(r.seconds)} s · Inhalte außerhalb des Ausschnitts entfernt`);
     if (!r.normalised)
       note(
@@ -505,6 +529,7 @@ pdfButton.addEventListener("click", async () => {
     $("result-img").hidden = true;
     await saveFile(blob, `${exportBase(plan.name, plan.page, plan.pages.length)}.pdf`, "PDF-Dokument", "application/pdf", ".pdf");
   } catch (e) {
+    void busyWindow.end();
     status.textContent = `PDF-Export fehlgeschlagen: ${String(e)}`;
   } finally {
     busy = false;
@@ -536,28 +561,16 @@ async function exportTiles(): Promise<void> {
   busy = true;
   updateButtons();
   $("result-img").hidden = true;
+  status.replaceChildren();
+  // The engine stops between Tiles, so here (only) the window offers "Abbrechen".
   let cancelled = false;
-  const text = document.createElement("span");
-  const cancel = document.createElement("button");
-  cancel.className = "btn";
-  cancel.id = "tiles-cancel";
-  cancel.textContent = "Abbrechen";
-  cancel.addEventListener("click", () => {
-    cancelled = true;
-    cancel.disabled = true;
-    text.textContent = "Wird abgebrochen…";
-  });
-  const row = document.createElement("div");
-  row.className = "progress";
-  row.append(text, cancel);
-  status.replaceChildren(row);
+  await busyWindow.start("Ausschnitt wird vorbereitet…", { button: pdfButton, cancel: () => (cancelled = true) });
 
   const t0 = performance.now();
   const zipped: ZipEntry[] = [];
   let bytes = 0;
   let done = 0;
   try {
-    text.textContent = "Ausschnitt wird vorbereitet…";
     await engine.tilesBegin({
       clip,
       page: plan.page,
@@ -570,7 +583,8 @@ async function exportTiles(): Promise<void> {
     });
     for (const t of list) {
       if (cancelled) break;
-      text.textContent = `Kachel ${done + 1} von ${list.length} (${t.name})…`;
+      busyWindow.text(`Kachel ${done + 1} von ${list.length} (${t.name})…`);
+      busyWindow.progress(done, list.length);
       const r = await engine.tile(t);
       if (r.pdf) {
         bytes += r.pdf.length;
@@ -582,7 +596,7 @@ async function exportTiles(): Promise<void> {
     }
     if (cancelled) {
       await engine.tilesAbort();
-      status.replaceChildren();
+      void busyWindow.end();
       note(
         folder && done > 0
           ? `Abgebrochen. ${done} von ${list.length} Kacheln wurden in den Ordner „${folder.name}“ geschrieben.`
@@ -591,12 +605,12 @@ async function exportTiles(): Promise<void> {
       );
       return;
     }
-    cancel.disabled = true;
-    text.textContent = "Wird gespeichert…";
+    busyWindow.cancellable(false);
+    busyWindow.progress(done, list.length);
+    busyWindow.text("Wird gespeichert…");
     const fin = await engine.tilesFinish();
     const n = list.length.toLocaleString("de-DE");
     const secs = `${de((performance.now() - t0) / 1000)} s`;
-    status.replaceChildren();
     if (writeBook && fin.pdf) {
       const blob = new Blob([fin.pdf as BlobPart], { type: "application/pdf" });
       await writeBook(blob);
@@ -607,6 +621,7 @@ async function exportTiles(): Promise<void> {
       download(zip(zipped), `${base}_Kacheln.zip`);
       note(`${n} Kacheln als ZIP-Datei gespeichert (kein Ordner-Dialog verfügbar): ${de(bytes / MB, 2)} MB · ${secs}`);
     }
+    void busyWindow.end();
     note(
       g.marginMm >= 2
         ? "Inhalte außerhalb jeder Kachel entfernt. Zum Zusammensetzen den Rand an den Schnittmarken abschneiden."
@@ -615,6 +630,7 @@ async function exportTiles(): Promise<void> {
     );
   } catch (e) {
     await engine.tilesAbort().catch(() => undefined);
+    void busyWindow.end();
     status.textContent = `Kachel-Export fehlgeschlagen: ${String(e)}`;
   } finally {
     busy = false;

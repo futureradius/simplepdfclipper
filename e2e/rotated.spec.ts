@@ -36,6 +36,7 @@ test("opens a rotated page as displayed and exports it upright", async ({ page }
   await page.locator("#file").setInputFiles(plan);
   // Shown as displayed: landscape.
   await expect(page.locator("#plan-info")).toContainText("297 × 210 mm", { timeout: 60_000 });
+  await expect(page.locator("#busy")).toBeHidden(); // the busy window (ADR 0012) blocks input until gone
 
   await page.locator("#clip-x").fill("10");
   await page.locator("#clip-y").fill("150");

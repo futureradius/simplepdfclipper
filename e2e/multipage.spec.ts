@@ -64,6 +64,7 @@ test("multi-page Document: page picker, page switching, exports of the chosen pa
   await thumbs.nth(1).click();
   await expect(picker).toBeHidden();
   await expect(page.locator("#plan-info")).toContainText("420 × 297 mm · geladen in", { timeout: 60_000 });
+  await expect(page.locator("#busy")).toBeHidden(); // the busy window (ADR 0012) blocks input until gone
   await expect(page.locator("#pager")).toBeVisible();
   await expect(page.locator("#page-pick")).toHaveText("Seite 2 von 3");
   await expect(page.locator("#plan-details")).toContainText("Seiten3");
@@ -86,6 +87,7 @@ test("multi-page Document: page picker, page switching, exports of the chosen pa
   await page.locator("#page-next").click();
   await expect(page.locator("#page-pick")).toHaveText("Seite 3 von 3");
   await expect(page.locator("#plan-info")).toContainText("297 × 210 mm", { timeout: 60_000 });
+  await expect(page.locator("#busy")).toBeHidden(); // the busy window (ADR 0012) blocks input until gone
   await expect(page.locator("#page-next")).toBeDisabled();
   await expect(page.locator("#page-prev")).toBeEnabled();
   expect(await page.locator("#clip-w").inputValue()).toBe("150.0");
@@ -103,6 +105,7 @@ test("multi-page Document: page picker, page switching, exports of the chosen pa
   await thumbs.nth(0).click();
   await expect(page.locator("#page-pick")).toHaveText("Seite 1 von 3");
   await expect(page.locator("#plan-info")).toContainText("210 × 297 mm", { timeout: 60_000 });
+  await expect(page.locator("#busy")).toBeHidden(); // the busy window (ADR 0012) blocks input until gone
   await expect(page.locator("#page-prev")).toBeDisabled();
   download = page.waitForEvent("download", { timeout: 60_000 });
   await page.locator("#export-svg").click();
@@ -116,15 +119,18 @@ test("multi-page Document: page picker, page switching, exports of the chosen pa
   await page.locator("#page-next").click();
   await expect(page.locator("#page-pick")).toHaveText("Seite 2 von 3");
   await expect(page.locator("#plan-info")).toContainText("420 × 297 mm", { timeout: 60_000 });
+  await expect(page.locator("#busy")).toBeHidden(); // the busy window (ADR 0012) blocks input until gone
   await page.locator("#clip-x").fill("0");
   await page.locator("#clip-w").fill("400");
   await page.locator("#page-next").click(); // page 3 is 297 mm wide: reset to its full width
   await expect(page.locator("#plan-info")).toContainText("297 × 210 mm", { timeout: 60_000 });
+  await expect(page.locator("#busy")).toBeHidden(); // the busy window (ADR 0012) blocks input until gone
   expect(await page.locator("#clip-w").inputValue()).toBe("297.0");
 
   // A single-page file opens straight away, without page controls or page in the name.
   await page.locator("#file").setInputFiles(single);
   await expect(page.locator("#plan-info")).toContainText("200 × 100 mm", { timeout: 60_000 });
+  await expect(page.locator("#busy")).toBeHidden(); // the busy window (ADR 0012) blocks input until gone
   await expect(picker).toBeHidden();
   await expect(page.locator("#pager")).toBeHidden();
   download = page.waitForEvent("download", { timeout: 60_000 });

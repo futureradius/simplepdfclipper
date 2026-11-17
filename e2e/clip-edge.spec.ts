@@ -24,6 +24,7 @@ test("a Clip edge dragged past the Plan edge stops there and the opposite edge s
   await expect(page.locator("#choose")).toBeEnabled({ timeout: 60_000 });
   await page.locator("#file").setInputFiles(plan);
   await expect(page.locator("#plan-info")).toContainText("210 × 297 mm", { timeout: 60_000 });
+  await expect(page.locator("#busy")).toBeHidden(); // the busy window (ADR 0012) blocks input until gone
 
   // Clip 10..110 x 10..60 mm, fitted in the precision view (centre 60, 35).
   await page.locator("#clip-x").fill("10");

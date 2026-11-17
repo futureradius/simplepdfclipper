@@ -46,7 +46,7 @@ button is disabled while it is switched on, with a note and tooltip saying why.
   - one multipage file `<Plan>_Ausschnitt_Kacheln.pdf`, pages row by row.
 - **Limits:** a remainder under 0.1 mm is no Tile of its own; it joins the last Tile (nothing is lost); Tiles at least 10 mm; above 100
   Sheets an amber warning, never a refusal. Progress ("Kachel 12 von 70") with
-  cancel.
+  cancel, in the busy window (ADR 0012).
 - **Preview:** the Tile grid with Tile names is drawn over the Clip in the precision
   view; the minimap (ADR 0012) shows the cut lines only, without names.
 - **Remembered** like the Clip (ADR 0007): on/off, mode, format, orientation, both

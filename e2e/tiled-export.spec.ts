@@ -28,6 +28,7 @@ async function openPlan(page: Page) {
   await expect(page.locator("#choose")).toBeEnabled({ timeout: 60_000 });
   await page.locator("#file").setInputFiles(TEST_PLAN);
   await expect(page.locator("#plan-info")).toContainText("geladen in", { timeout: 60_000 });
+  await expect(page.locator("#busy")).toBeHidden(); // the busy window (ADR 0012) blocks input until gone
 }
 
 const pdfPages = (bytes: Buffer) => {
@@ -147,11 +148,21 @@ test("Tiled Export: settings, grid preview, folder, multipage, ZIP fallback, can
   await page.locator("#tiles-orientation").selectOption("portrait");
   await expect(page.locator("#tiles-summary")).toContainText("7 Spalten × 52 Zeilen = 364 Blätter");
   await expect(page.locator("#tiles-summary .warn")).toContainText("Viele Blätter");
+  // The busy window (ADR 0012) shows the progress and offers "Abbrechen", also as Esc.
   await page.locator("#export-pdf").click();
-  await expect(page.locator("#export-status")).toContainText("Kachel", { timeout: 60_000 });
-  await page.locator("#tiles-cancel").click();
+  await expect(page.locator("#busy-text")).toContainText("Kachel", { timeout: 60_000 });
+  await expect(page.locator("#busy")).toHaveClass(/shown/);
+  await expect(page.locator("#busy-bar")).toBeVisible();
+  await page.screenshot({ path: "test-results/busy-tiles.png" });
+  await page.locator("#busy-cancel").click();
   await expect(page.locator("#export-status")).toContainText("Abgebrochen. Es wurde nichts gespeichert.", { timeout: 60_000 });
+  await expect(page.locator("#busy")).toBeHidden();
   await expect(page.locator("#export-pdf")).toBeEnabled();
+  await page.locator("#export-pdf").click();
+  await expect(page.locator("#busy-text")).toContainText("Kachel", { timeout: 60_000 });
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#export-status")).toContainText("Abgebrochen. Es wurde nichts gespeichert.", { timeout: 60_000 });
+  await expect(page.locator("#busy")).toBeHidden();
 
   // Settings are remembered.
   await page.reload();
@@ -162,7 +173,9 @@ test("Tiled Export: settings, grid preview, folder, multipage, ZIP fallback, can
   await expect(page.locator("input[name=tiles-mode][value=paper]")).toBeChecked();
   await expect(page.locator("#tiles-row-h")).toHaveValue("250");
 
-  // Switching off restores the normal export.
+  // Switching off restores the normal export (once the Plan is open: the busy window blocks until then).
+  await expect(page.locator("#plan-info")).toContainText("geladen in", { timeout: 60_000 });
+  await expect(page.locator("#busy")).toBeHidden();
   await page.locator("#tiles-on").uncheck({ force: true });
   await expect(page.locator("#export-svg")).toBeEnabled();
   await expect(page.locator("#svg-note")).toBeHidden();
