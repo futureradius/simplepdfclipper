@@ -18,7 +18,7 @@ double-click. No server, no upload, no installation.
    pages later with ◀ ▶ in step 1 (ADR 0014). Exports then carry the page in their
    name (`Plan_S3_Ausschnitt.svg`) and contain only that page.
 4. Set the Clip: drag its edges in the precision view (they snap to lines; hold Alt
-   to place freely), or type the mm values. The view starts with the whole Plan; the
+   to place freely; an edge stops at the Plan edge), or type the mm values. The view starts with the whole Plan; the
    minimap in the bottom-right corner moves the view (keys: `1` whole Plan, `2` Plan
    width, `3` 1:1, `F` Clip).
 5. Export as SVG (for the whiteboard tool) or as PDF (for documentation; everything outside the

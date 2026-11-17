@@ -16,6 +16,8 @@ Details:
 - Snap can be toggled in the UI; holding **Alt** while dragging disables it temporarily.
 - The Clip has drag handles on all edges and corners, plus four number fields
   (Links, Oben, Breite, Höhe) in mm.
+- *Added 2026-11-17:* a dragged edge stops hard at the Plan edge; the opposite edge
+  never moves. A snap that would push an edge off the Plan is ignored.
 
 Export is vector only, to PDF and SVG. No raster export.
 

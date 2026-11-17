@@ -44,8 +44,12 @@ export function hitTest(c: ClipMm, p: Point, tol: number): Handle {
 export function dragClip(start: ClipMm, handle: Handle, from: Point, to: Point, plan: { width: number; height: number }): ClipMm {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
+  const clampX = (x: number) => Math.min(Math.max(0, x), plan.width);
+  const clampY = (y: number) => Math.min(Math.max(0, y), plan.height);
   if (handle === "new") {
-    return normalise({ x: from.x, y: from.y, width: dx, height: dy });
+    const x0 = clampX(from.x);
+    const y0 = clampY(from.y);
+    return normalise({ x: x0, y: y0, width: clampX(to.x) - x0, height: clampY(to.y) - y0 });
   }
   if (handle === "move") {
     return {
@@ -58,11 +62,17 @@ export function dragClip(start: ClipMm, handle: Handle, from: Point, to: Point, 
   let y0 = start.y;
   let x1 = start.x + start.width;
   let y1 = start.y + start.height;
-  if (handle.includes("w")) x0 += dx;
-  if (handle.includes("e")) x1 += dx;
-  if (handle.includes("n")) y0 += dy;
-  if (handle.includes("s")) y1 += dy;
+  // Each dragged edge stops hard at the Plan edge, so the opposite edge never moves.
+  if (handle.includes("w")) x0 = clampX(x0 + dx);
+  if (handle.includes("e")) x1 = clampX(x1 + dx);
+  if (handle.includes("n")) y0 = clampY(y0 + dy);
+  if (handle.includes("s")) y1 = clampY(y1 + dy);
   return normalise({ x: x0, y: y0, width: x1 - x0, height: y1 - y0 });
+}
+
+/** Is the Clip entirely on the Plan? Used to drop a snap that would push an edge off it. */
+export function onPlan(c: ClipMm, plan: { width: number; height: number }): boolean {
+  return c.x >= 0 && c.y >= 0 && c.x + c.width <= plan.width && c.y + c.height <= plan.height;
 }
 
 /** Dragging an edge past the opposite one flips the rectangle instead of breaking it. */

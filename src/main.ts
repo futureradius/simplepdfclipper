@@ -7,7 +7,7 @@ import { TilesPanel } from "./ui/tilespanel";
 import { zip, type ZipEntry } from "./ui/zip";
 import { loadExportSettings, loadStoredClip, storeClip } from "./ui/storage";
 import { PresetsPanel } from "./ui/presetspanel";
-import { dragClip, type Handle, type Point } from "./ui/clipdrag";
+import { dragClip, onPlan, type Handle, type Point } from "./ui/clipdrag";
 import { Minimap } from "./ui/minimap";
 import { exportBase, PagePicker, sourceLabel, type PageSize } from "./ui/pagepicker";
 import { snapClip, type Guide, type SnapIndex } from "./ui/snap";
@@ -118,12 +118,16 @@ for (const input of Object.values(fields)) {
 /** Drag on a Clip handle in the precision view, with snapping. */
 function applyDrag(handle: Handle, start: ClipMm, from: Point, to: Point, altKey: boolean, visible: ViewRect, tolMm: number): Guide[] {
   if (!plan) return [];
-  let c = dragClip(start, handle, from, to, { width: plan.widthMm, height: plan.heightMm });
+  const size = { width: plan.widthMm, height: plan.heightMm };
+  let c = dragClip(start, handle, from, to, size);
   let guides: Guide[] = [];
   if (snapIndex && snapToggle.checked && !altKey) {
     const r = snapClip(c, handle, snapIndex, tolMm, visible, { from, to });
-    c = r.clip;
-    guides = r.guides;
+    // A snap line outside the Plan (content can overhang the page) must not push an edge off it.
+    if (onPlan(r.clip, size)) {
+      c = r.clip;
+      guides = r.guides;
+    }
   }
   setClip(c, "other", guides);
   return guides;
