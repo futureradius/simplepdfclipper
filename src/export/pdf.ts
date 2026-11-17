@@ -30,6 +30,8 @@ export interface SheetLayout {
 
 export interface PdfExportOptions {
   clip: ClipMm;
+  /** Page of the Document (0-based, default 0). Every other page is dropped (ADR 0014). */
+  page?: number;
   /** File name of the Plan, for the document properties. */
   sourceName: string;
   date: Date;
@@ -61,6 +63,11 @@ export function exportPdf(mupdf: typeof MuPDF, planBytes: Uint8Array, opts: PdfE
   const doc = mupdf.Document.openDocument(planBytes, "application/pdf").asPDF();
   if (!doc) throw new Error("Kein PDF");
   try {
+    // One export is always one page: the other pages of the Document must not travel
+    // along unredacted (ADR 0005, 0014).
+    const index = opts.page ?? 0;
+    if (!(index >= 0 && index < doc.countPages())) throw new Error(`no page ${index + 1}`);
+    if (doc.countPages() > 1) doc.rearrangePages([index]);
     const page = doc.loadPage(0) as MuPDF.PDFPage;
     const obj = page.getObject();
 

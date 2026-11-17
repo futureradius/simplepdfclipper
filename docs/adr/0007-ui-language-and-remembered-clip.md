@@ -8,6 +8,8 @@ Status: accepted (2026-11-03)
 - The last Clip (in mm) is stored in the browser (localStorage). When a new version
   of the Plan is opened, the Clip is restored so the user only has to adjust it.
   If the stored Clip does not fit inside the new Plan, it is silently ignored.
+  The same rule applies when switching to another page of a multi-page Document
+  (ADR 0014).
 
 ## Consequences
 

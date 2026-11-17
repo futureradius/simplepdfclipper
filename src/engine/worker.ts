@@ -12,9 +12,20 @@ scope.onmessage = async (ev: MessageEvent<Request>) => {
       case "init":
         result = await core.init(req.wasmBinary);
         break;
-      case "openPlan":
-        result = core.openPlan(req.bytes);
+      case "openDocument":
+        result = core.openDocument(req.bytes);
         break;
+      case "discardDocument":
+        result = core.discardDocument();
+        break;
+      case "openPage":
+        result = core.openPage(req.page);
+        break;
+      case "renderThumbnail": {
+        const t = core.renderThumbnail(req.thumb);
+        scope.postMessage({ id: req.id, ok: true, result: t } satisfies Response, [t.pixels.buffer]);
+        return;
+      }
       case "renderPreview": {
         const preview = core.renderPreview();
         scope.postMessage({ id: req.id, ok: true, result: preview } satisfies Response, [preview.pixels.buffer]);

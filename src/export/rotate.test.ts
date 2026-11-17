@@ -80,7 +80,7 @@ describe.each([0, 90, 180, 270] as mupdf.Rotate[])("page with /Rotate %i", (rota
   const date = new Date(2026, 10, 17);
 
   it("exports an upright PDF page that looks like the displayed area", () => {
-    const r = exportPdf(mupdf, bytes, { clip, sourceName: "rot.pdf", date });
+    const r = exportPdf(mupdf, bytes, { clip, page: 0, sourceName: "rot.pdf", date });
     const page = mupdf.Document.openDocument(r.pdf, "application/pdf").loadPage(0) as mupdf.PDFPage;
     const rot = page.getObject().get("Rotate");
     expect(rot.isNull() || rot.asNumber() === 0).toBe(true);
@@ -95,7 +95,7 @@ describe.each([0, 90, 180, 270] as mupdf.Rotate[])("page with /Rotate %i", (rota
   });
 
   it("removes text outside the Clip", () => {
-    const r = exportPdf(mupdf, bytes, { clip, sourceName: "rot.pdf", date });
+    const r = exportPdf(mupdf, bytes, { clip, page: 0, sourceName: "rot.pdf", date });
     const page = mupdf.Document.openDocument(r.pdf, "application/pdf").loadPage(0);
     const kept = page.toStructuredText("preserve-whitespace").asText();
     for (const word of ["OBEN", "LINKS"]) {
@@ -117,7 +117,7 @@ describe.each([0, 90, 180, 270] as mupdf.Rotate[])("page with /Rotate %i", (rota
       rows: { lead: "count", count: 1, lengthMm: 1 },
       marginMm: 0,
     }) as TileGrid;
-    const job = { clip, sourceName: "rot.pdf", date, multipage: false, rows: 1, columns: 2, marginMm: 0 };
+    const job = { clip, page: 0, sourceName: "rot.pdf", date, multipage: false, rows: 1, columns: 2, marginMm: 0 };
     const t = new TiledPdfExport(mupdf, bytes, job);
     const second = tiles(g)[1]!;
     const page = mupdf.Document.openDocument(t.tile(second)!, "application/pdf").loadPage(0);

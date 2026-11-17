@@ -71,7 +71,7 @@ describe.skipIf(!have)("Tiled Export on the Test Plan", () => {
     const all = tiles(g);
     expect(all.length).toBe(21);
     const t0 = performance.now();
-    const job = new TiledPdfExport(mupdf, bytes, { clip, sourceName: "test-plan.pdf", date, multipage: false, rows: g.rows.length, columns: g.columns.length, marginMm: 10 });
+    const job = new TiledPdfExport(mupdf, bytes, { clip, page: 0, sourceName: "test-plan.pdf", date, multipage: false, rows: g.rows.length, columns: g.columns.length, marginMm: 10 });
     const out = all.map((t) => ({ t, pdf: job.tile(t)! }));
     job.destroy();
     console.log(`21 Tiles: ${((performance.now() - t0) / 1000).toFixed(1)} s, ${(out.reduce((n, o) => n + o.pdf.length, 0) / 1e6).toFixed(2)} MB`);
@@ -118,7 +118,7 @@ describe.skipIf(!have)("Tiled Export on the Test Plan", () => {
 
   it("multipage: one page per Tile, row by row, and Margin 0 has no marks or label", () => {
     const g = grid(clip, { mode: "free", columns: { lead: "count", count: 3, lengthMm: 0 }, rows: { lead: "length", count: 0, lengthMm: 250 }, marginMm: 0 });
-    const job = new TiledPdfExport(mupdf, bytes, { clip, sourceName: "test-plan.pdf", date, multipage: true, rows: g.rows.length, columns: g.columns.length, marginMm: 0 });
+    const job = new TiledPdfExport(mupdf, bytes, { clip, page: 0, sourceName: "test-plan.pdf", date, multipage: true, rows: g.rows.length, columns: g.columns.length, marginMm: 0 });
     for (const t of tiles(g)) expect(job.tile(t)).toBeUndefined();
     const pdf = job.finish()!;
     job.destroy();
@@ -139,7 +139,7 @@ describe.skipIf(!have)("Tiled Export on the Test Plan", () => {
   it("Sheets longer than 5,080 mm keep the UserUnit and still render exactly", () => {
     const tall: ClipMm = { x: 100, y: 1000, width: 600, height: 6000 };
     const g = grid(tall, { mode: "free", marginMm: 10 });
-    const job = new TiledPdfExport(mupdf, bytes, { clip: tall, sourceName: "test-plan.pdf", date, multipage: false, rows: 1, columns: 1, marginMm: 10 });
+    const job = new TiledPdfExport(mupdf, bytes, { clip: tall, page: 0, sourceName: "test-plan.pdf", date, multipage: false, rows: 1, columns: 1, marginMm: 10 });
     const pdf = job.tile(tiles(g)[0]!)!;
     job.destroy();
     const page = mupdf.Document.openDocument(pdf, "application/pdf").loadPage(0) as mupdf.PDFPage;

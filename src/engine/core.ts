@@ -1,8 +1,13 @@
 // Engine core: everything that touches MuPDF. Runs inside the worker, or on the
 // main thread as a fallback when workers are unavailable from file:// (ADR 0010).
+//
+// A file is opened in two steps (ADR 0014): openDocument() loads it as a *candidate*
+// (thumbnails of its pages can be drawn), openPage() makes one of its pages the Plan.
+// Until then the previous Plan stays fully usable, so the page picker can be cancelled.
 
 import type * as MuPDF from "mupdf";
 import type {
+  DocumentInfo,
   PdfExportRequest,
   PdfExportResult,
   PlanInfo,
@@ -12,6 +17,7 @@ import type {
   RegionResult,
   SvgExportRequest,
   SvgExportResult,
+  ThumbnailRequest,
   TileResult,
   TilesBeginRequest,
 } from "./protocol";
@@ -23,14 +29,23 @@ import { extractSnapTargets } from "./snaptargets";
 import type { Matrix } from "../export/geometry";
 import { exportSvg as runSvgExport } from "../export/index";
 
+interface OpenDocument {
+  doc: MuPDF.Document;
+  /** The file as opened; the PDF export works on a fresh copy of it. */
+  bytes: Uint8Array;
+}
+
 let mupdf: typeof MuPDF | undefined;
-let doc: MuPDF.Document | undefined;
+/** The Document the Plan comes from. */
+let current: OpenDocument | undefined;
+/** A Document just opened, whose page has not been chosen yet. */
+let candidate: OpenDocument | undefined;
+/** The chosen page (0-based). */
+let pageIndex = 0;
 /** The page pre-processed once: much faster to draw repeatedly than the PDF content. */
 let list: MuPDF.DisplayList | undefined;
 /** Page bounds origin (pt); the Plan's top-left corner. */
 let origin: [number, number] = [0, 0];
-/** The Plan file as opened; the PDF export works on a fresh copy of it. */
-let planBytes: Uint8Array | undefined;
 
 const PT_TO_MM = 25.4 / 72;
 
@@ -47,42 +62,107 @@ function lib(): typeof MuPDF {
   return mupdf;
 }
 
-function openDoc(): MuPDF.Document {
-  if (!doc) throw new Error("no Plan open");
-  return doc;
+function plan(): OpenDocument {
+  if (!current) throw new Error("no Plan open");
+  return current;
 }
 
-export function openPlan(bytes: ArrayBuffer): PlanInfo {
-  list?.destroy();
-  list = undefined;
-  doc?.destroy();
-  planBytes = new Uint8Array(bytes.slice(0));
-  doc = lib().Document.openDocument(new Uint8Array(bytes), "application/pdf");
-  const pageCount = doc.countPages();
-  const page = doc.loadPage(0);
-  const [x0, y0, x1, y1] = page.getBounds();
-
-  // Diagnostics: which page boxes the file declares, and any scale factor.
-  const boxes: PlanInfo["boxes"] = {};
-  let userUnit = 1;
-  let rotate = 0;
-  const pdfPage = doc.asPDF() ? (page as MuPDF.PDFPage) : undefined;
-  if (pdfPage) {
-    const obj = pdfPage.getObject();
-    for (const name of BOXES) {
-      if (obj.getInheritable(name).isNull()) continue;
-      const [bx0, by0, bx1, by1] = pdfPage.getBounds(name);
-      boxes[name] = { widthPt: bx1 - bx0, heightPt: by1 - by0 };
-    }
-    const uu = obj.get("UserUnit");
-    if (uu.isNumber()) userUnit = uu.asNumber();
-    const rot = obj.getInheritable("Rotate");
-    if (rot.isNumber()) rotate = rot.asNumber();
+/** Opens a file as the candidate Document; the current Plan is untouched. */
+export function openDocument(bytes: ArrayBuffer): DocumentInfo {
+  discardDocument();
+  const copy = new Uint8Array(bytes.slice(0));
+  const doc = lib().Document.openDocument(new Uint8Array(bytes), "application/pdf");
+  candidate = { doc, bytes: copy };
+  const pages: DocumentInfo["pages"] = [];
+  for (let i = 0, n = doc.countPages(); i < n; i++) {
+    const page = doc.loadPage(i);
+    const [x0, y0, x1, y1] = page.getBounds();
+    pages.push({ widthPt: x1 - x0, heightPt: y1 - y0 });
+    page.destroy();
   }
-  origin = [x0, y0];
-  list = page.toDisplayList(false);
-  page.destroy();
-  return { pageCount, widthPt: x1 - x0, heightPt: y1 - y0, boxes, userUnit, rotate };
+  return { pages };
+}
+
+/** Drops the candidate Document (page picker cancelled). */
+export function discardDocument(): void {
+  candidate?.doc.destroy();
+  candidate = undefined;
+}
+
+/** Makes a page the Plan: of the candidate Document if there is one, else of the current one. */
+export function openPage(index: number): PlanInfo {
+  const from = candidate ?? plan();
+  const pageCount = from.doc.countPages();
+  if (!(index >= 0 && index < pageCount)) throw new Error(`no page ${index + 1}`);
+  const page = from.doc.loadPage(index);
+  try {
+    const [x0, y0, x1, y1] = page.getBounds();
+
+    // Diagnostics: which page boxes the file declares, and any scale factor.
+    const boxes: PlanInfo["boxes"] = {};
+    let userUnit = 1;
+    let rotate = 0;
+    const pdfPage = from.doc.asPDF() ? (page as MuPDF.PDFPage) : undefined;
+    if (pdfPage) {
+      const obj = pdfPage.getObject();
+      for (const name of BOXES) {
+        if (obj.getInheritable(name).isNull()) continue;
+        const [bx0, by0, bx1, by1] = pdfPage.getBounds(name);
+        boxes[name] = { widthPt: bx1 - bx0, heightPt: by1 - by0 };
+      }
+      const uu = obj.get("UserUnit");
+      if (uu.isNumber()) userUnit = uu.asNumber();
+      const rot = obj.getInheritable("Rotate");
+      if (rot.isNumber()) rotate = rot.asNumber();
+    }
+    const newList = page.toDisplayList(false);
+
+    // Only now, with the page ready, replace the previous Plan.
+    list?.destroy();
+    list = newList;
+    if (candidate) {
+      if (current !== candidate) current?.doc.destroy();
+      current = candidate;
+      candidate = undefined;
+    }
+    pageIndex = index;
+    origin = [x0, y0];
+    return { pageCount, pageIndex: index, widthPt: x1 - x0, heightPt: y1 - y0, boxes, userUnit, rotate };
+  } finally {
+    page.destroy();
+  }
+}
+
+/** Kept for tests and scripts: open a file and use its first page. */
+export function openPlan(bytes: ArrayBuffer): PlanInfo {
+  openDocument(bytes);
+  return openPage(0);
+}
+
+/** A page of the candidate (or current) Document as a small picture, for the page picker. */
+export function renderThumbnail(t: ThumbnailRequest): Preview {
+  const m = lib();
+  const page = (candidate ?? plan()).doc.loadPage(t.page);
+  try {
+    const [x0, y0, x1, y1] = page.getBounds();
+    const s = Math.min(t.maxWidthPx / (x1 - x0), t.maxHeightPx / (y1 - y0));
+    const widthPx = Math.max(1, Math.round((x1 - x0) * s));
+    const heightPx = Math.max(1, Math.round((y1 - y0) * s));
+    const pix = new m.Pixmap(m.ColorSpace.DeviceRGB, [0, 0, widthPx, heightPx], true);
+    pix.clear(255);
+    const dev = new m.DrawDevice([s, 0, 0, s, -x0 * s, -y0 * s], pix);
+    try {
+      page.run(dev, m.Matrix.identity);
+      dev.close();
+    } finally {
+      dev.destroy();
+    }
+    const pixels = pix.getPixels().slice();
+    pix.destroy();
+    return { pixels, widthPx, heightPx };
+  } finally {
+    page.destroy();
+  }
 }
 
 function displayList(): MuPDF.DisplayList {
@@ -125,9 +205,15 @@ export function snapTargets(): SnapIndex {
   return extractSnapTargets(lib(), displayList(), pageToMm);
 }
 
+/** The export must come from the page shown, not one picked while the request was queued. */
+function checkPage(page: number): void {
+  if (page !== pageIndex) throw new Error(`page ${page + 1} is not the open Plan`);
+}
+
 export function exportSvg(options: SvgExportRequest): SvgExportResult {
+  checkPage(options.page);
   const t0 = performance.now();
-  const page = openDoc().loadPage(0);
+  const page = plan().doc.loadPage(options.page);
   try {
     const r = runSvgExport(lib(), page, options);
     return {
@@ -143,9 +229,9 @@ export function exportSvg(options: SvgExportRequest): SvgExportResult {
 }
 
 export function exportPdf(options: PdfExportRequest): PdfExportResult {
-  if (!planBytes) throw new Error("no Plan open");
+  checkPage(options.page);
   const t0 = performance.now();
-  const r = runPdfExport(lib(), planBytes, { clip: options.clip, sourceName: options.sourceName, date: new Date() });
+  const r = runPdfExport(lib(), plan().bytes, { clip: options.clip, page: options.page, sourceName: options.sourceName, date: new Date() });
   return { pdf: r.pdf, normalised: r.normalised, seconds: (performance.now() - t0) / 1000 };
 }
 
@@ -155,9 +241,9 @@ let tiled: TiledPdfExport | undefined;
 
 /** Exports the Clip once; the Tiles are then cut out of it one by one. */
 export function tilesBegin(job: TilesBeginRequest): void {
-  if (!planBytes) throw new Error("no Plan open");
+  checkPage(job.page);
   tilesAbort();
-  tiled = new TiledPdfExport(lib(), planBytes, job);
+  tiled = new TiledPdfExport(lib(), plan().bytes, job);
 }
 
 export function tile(t: Tile): TileResult {
