@@ -210,6 +210,30 @@
       table.keys td:first-child { white-space: nowrap; }
       dialog h3 { margin: 16px 0 6px; font-size: 14px; }
       dialog .foot { display: flex; justify-content: flex-end; padding: 12px 16px 16px; }
+      /* ---- Page picker (ADR 0014) ------------------------------------------------ */
+      .pager { display: flex; align-items: center; gap: 4px; margin: 8px 0 4px; }
+      .pager[hidden] { display: none; }
+      .pager .btn { height: 30px; padding: 0 10px; }
+      .pager #page-prev, .pager #page-next { width: 30px; padding: 0; font-size: 11px; color: var(--muted); }
+      .pager #page-pick { flex: 1; }
+      .pager #page-no { font-variant-numeric: tabular-nums; }
+      dialog#pages { width: min(760px, calc(100% - 32px)); }
+      .thumbs {
+        display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px;
+        margin-top: 14px; padding: 4px; max-height: min(64vh, 640px); overflow: hidden auto;
+      }
+      .thumb {
+        display: grid; justify-items: center; gap: 6px; padding: 10px 6px 8px;
+        border: 1px solid transparent; border-radius: var(--radius); background: transparent; cursor: pointer; font: inherit; color: inherit;
+      }
+      .thumb:hover { background: #f1f3f6; }
+      .thumb:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
+      .thumb.current { border-color: var(--accent); background: var(--accent-soft); }
+      .thumb .frame { height: 220px; display: grid; place-items: center; }
+      .thumb canvas { display: block; background: #fff; box-shadow: 0 0 0 1px var(--line-strong), 0 1px 3px rgba(16, 24, 40, 0.12); }
+      .thumb:not(.ready) canvas { background: #f6f7f9; }
+      .thumb .label { font-size: 13px; color: var(--muted); }
+      .thumb.current .label { color: var(--accent); font-weight: 600; }
     </style>
   </head>
   <body>
@@ -246,6 +270,11 @@
         <section class="step">
           <h2><span class="n">1</span>Plan</h2>
           <div class="plan-name" id="plan-name"></div>
+          <div class="pager" id="pager" hidden>
+            <button class="btn" id="page-prev" title="Vorherige Seite" aria-label="Vorherige Seite">◀</button>
+            <button class="btn" id="page-pick" title="Seite wählen">Seite <b id="page-no"></b> von <span id="page-count"></span></button>
+            <button class="btn" id="page-next" title="Nächste Seite" aria-label="Nächste Seite">▶</button>
+          </div>
           <div class="muted" id="plan-info"></div>
         </section>
 
@@ -370,6 +399,15 @@
       </div>
 
     </div>
+
+    <dialog id="pages" aria-labelledby="pages-title">
+      <div class="body">
+        <h2 id="pages-title">Seite wählen</h2>
+        <div class="muted" id="pages-info"></div>
+        <div class="thumbs" id="pages-grid"></div>
+      </div>
+      <div class="foot"><button class="btn" id="pages-cancel">Abbrechen</button></div>
+    </dialog>
 
     <dialog id="about">
       <div class="body">

@@ -13,6 +13,8 @@ import { rowName, type Tile } from "./tilegrid";
 
 export interface TiledJob {
   clip: ClipMm;
+  /** Page of the Document (0-based). */
+  page: number;
   sourceName: string;
   date: Date;
   multipage: boolean;
@@ -39,7 +41,7 @@ export class TiledPdfExport {
     planBytes: Uint8Array,
     private readonly job: TiledJob,
   ) {
-    this.clipBytes = exportPdf(mupdf, planBytes, { clip: job.clip, sourceName: job.sourceName, date: job.date }).pdf;
+    this.clipBytes = exportPdf(mupdf, planBytes, { clip: job.clip, page: job.page, sourceName: job.sourceName, date: job.date }).pdf;
     this.book = job.multipage ? new mupdf.PDFDocument() : undefined;
   }
 

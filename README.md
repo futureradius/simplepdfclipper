@@ -14,7 +14,9 @@ double-click. No server, no upload, no installation.
 
 1. Get `simplepdfclipper.html` (built as `dist/index.html`).
 2. Double-click it; it opens in Edge.
-3. Open your Plan.
+3. Open your Plan. If the PDF has several pages, pick one in the page picker; switch
+   pages later with ◀ ▶ in step 1 (ADR 0014). Exports then carry the page in their
+   name (`Plan_S3_Ausschnitt.svg`) and contain only that page.
 4. Set the Clip: drag its edges in the precision view (they snap to lines; hold Alt
    to place freely), or type the mm values. The view starts with the whole Plan; the
    minimap in the bottom-right corner moves the view (keys: `1` whole Plan, `2` Plan
@@ -40,6 +42,7 @@ Clip, and the SVG embeds only the part of the image inside it (ADR 0005).
 - [x] Scanned Plans: images cropped to the Clip in the SVG too (#2)
 - [x] Rotated pages (`/Rotate`), exported upright (#16)
 - [x] Minimap and whole-Plan start view (#4)
+- [x] Multi-page PDFs: page picker, one page per export (#1)
 - [ ] Named presets for export settings (#5)
 
 ## Development

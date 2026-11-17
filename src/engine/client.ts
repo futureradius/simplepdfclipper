@@ -4,6 +4,7 @@
 import wasmGzBase64 from "virtual:mupdf-wasm";
 import EngineWorker from "./worker?worker&inline";
 import type {
+  DocumentInfo,
   PdfExportRequest,
   PdfExportResult,
   PlanInfo,
@@ -14,6 +15,7 @@ import type {
   Response,
   SvgExportRequest,
   SvgExportResult,
+  ThumbnailRequest,
   TileResult,
   TilesBeginRequest,
 } from "./protocol";
@@ -24,7 +26,11 @@ export type EngineMode = "worker" | "main-thread";
 
 export interface Engine {
   mode: EngineMode;
-  openPlan(bytes: ArrayBuffer): Promise<PlanInfo>;
+  /** Opens a file as a candidate; the current Plan stays until openPage (ADR 0014). */
+  openDocument(bytes: ArrayBuffer): Promise<DocumentInfo>;
+  discardDocument(): Promise<void>;
+  openPage(page: number): Promise<PlanInfo>;
+  renderThumbnail(thumb: ThumbnailRequest): Promise<Preview>;
   renderPreview(): Promise<Preview>;
   renderRegion(region: RegionRequest): Promise<RegionResult>;
   snapTargets(): Promise<SnapIndex>;
@@ -95,7 +101,10 @@ function workerEngine(wasm: ArrayBuffer, timeoutMs: number): Promise<Engine> {
         clearTimeout(timer);
         resolve({
           mode: "worker",
-          openPlan: (bytes) => call<PlanInfo>({ op: "openPlan", bytes }, [bytes]),
+          openDocument: (bytes) => call<DocumentInfo>({ op: "openDocument", bytes }, [bytes]),
+          discardDocument: () => call<void>({ op: "discardDocument" }),
+          openPage: (page) => call<PlanInfo>({ op: "openPage", page }),
+          renderThumbnail: (thumb) => call<Preview>({ op: "renderThumbnail", thumb }),
           renderPreview: () => call<Preview>({ op: "renderPreview" }),
           renderRegion: (region) => call<RegionResult>({ op: "renderRegion", region }),
           snapTargets: () => call<SnapIndex>({ op: "snapTargets" }),
@@ -121,7 +130,10 @@ async function mainThreadEngine(wasm: ArrayBuffer): Promise<Engine> {
   await core.init(wasm);
   return {
     mode: "main-thread",
-    openPlan: async (bytes) => core.openPlan(bytes),
+    openDocument: async (bytes) => core.openDocument(bytes),
+    discardDocument: async () => core.discardDocument(),
+    openPage: async (page) => core.openPage(page),
+    renderThumbnail: async (thumb) => core.renderThumbnail(thumb),
     renderPreview: async () => core.renderPreview(),
     renderRegion: async (region) => core.renderRegion(region),
     snapTargets: async () => core.snapTargets(),

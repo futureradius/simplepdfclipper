@@ -320,11 +320,18 @@ export class Viewer {
 
     this.rendering = true;
     try {
+      const base = this.base;
       const bitmap = await this.cb.render(rect, pxPerMm);
-      // Use the actual image size (pixel counts are rounded) so nothing shifts.
-      this.layers.push({ bitmap, rect, pxPerMm: bitmap.width / (rect.x1 - rect.x0) });
-      while (this.layers.length > KEEP_LAYERS) this.layers.shift()!.bitmap.close();
-      this.requestDraw();
+      // Another page or Plan was opened meanwhile: this image belongs to the old one.
+      if (this.base !== base) {
+        bitmap.close();
+        this.renderAgain = true;
+      } else {
+        // Use the actual image size (pixel counts are rounded) so nothing shifts.
+        this.layers.push({ bitmap, rect, pxPerMm: bitmap.width / (rect.x1 - rect.x0) });
+        while (this.layers.length > KEEP_LAYERS) this.layers.shift()!.bitmap.close();
+        this.requestDraw();
+      }
     } catch (err) {
       console.warn("render failed", err);
     } finally {

@@ -6,9 +6,15 @@ vector PDF and SVG.
 
 ## Glossary
 
+**Document**
+The PDF file the user opens. Usually a single page; if it has more, the user picks one in
+the page picker (ADR 0014).
+
 **Plan**
-The input PDF. A single page, usually vector graphics + text, ~3 MB or more. Scanned Plans
-(the page is an image) work too.
+The page of the Document being worked on: usually vector graphics + text, ~3 MB or more.
+Scanned Plans (the page is an image) work too. Everything else (Clip, Export, Tiles,
+Snap targets) refers to this one page; an export never spans pages.
+_Avoid_: page picker results called "document"; the Document is the file, the Plan its page
 The reference case is a rail construction schedule: 1188.9 mm wide × 14270.9 mm tall, just over 3 MB, opens in ~2.4 s.
 
 **UserUnit**

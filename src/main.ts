@@ -8,6 +8,7 @@ import { zip, type ZipEntry } from "./ui/zip";
 import { loadStoredClip, storeClip } from "./ui/storage";
 import { dragClip, type Handle, type Point } from "./ui/clipdrag";
 import { Minimap } from "./ui/minimap";
+import { exportBase, PagePicker, sourceLabel, type PageSize } from "./ui/pagepicker";
 import { snapClip, type Guide, type SnapIndex } from "./ui/snap";
 import { Viewer, type ViewRect } from "./ui/viewer";
 
@@ -39,7 +40,19 @@ $("engine-status").textContent = "";
 document.body.dataset.engine = engine.mode;
 
 // ---- State ---------------------------------------------------------------
-let plan: { name: string; fileName: string; widthMm: number; heightMm: number } | undefined;
+/** The Plan: one page of the opened Document (ADR 0014). */
+let plan:
+  | {
+      name: string;
+      fileName: string;
+      /** Every page of the Document. */
+      pages: PageSize[];
+      /** The chosen page, 0-based. */
+      page: number;
+      widthMm: number;
+      heightMm: number;
+    }
+  | undefined;
 let clip: ClipMm = { x: 0, y: 0, width: 0, height: 0 };
 let snapIndex: SnapIndex | undefined;
 const snapToggle = $<HTMLInputElement>("snap");
@@ -169,7 +182,7 @@ $("zoom-width").addEventListener("click", showPlanWidth);
 
 // ---- Keyboard ----------------------------------------------------------------
 window.addEventListener("keydown", (e) => {
-  if (!plan || about.open || e.ctrlKey || e.metaKey) return;
+  if (!plan || about.open || picker.isOpen || e.ctrlKey || e.metaKey) return;
   const t = e.target as HTMLElement;
   if (t.closest("input, textarea, select")) return; // typing in a field
   const step = e.shiftKey ? 1 : 0.1;
@@ -231,35 +244,57 @@ function showDetails(info: PlanInfo): void {
   );
 }
 
-async function openPlan(file: File): Promise<void> {
-  const busy = plan ? $("plan-info") : $("engine-status");
-  busy.textContent = "Plan wird geöffnet…";
-  $("start-error").textContent = "";
+// ---- Page picker and page switching (ADR 0014) ---------------------------------
+const picker = new PagePicker(
+  { dialog: $<HTMLDialogElement>("pages"), info: $("pages-info"), grid: $("pages-grid"), cancel: $<HTMLButtonElement>("pages-cancel") },
+  (page, maxWidthPx, maxHeightPx) => engine.renderThumbnail({ page, maxWidthPx, maxHeightPx }),
+);
+/** Bumped for every page shown, so the results of an older one are dropped. */
+let loadGeneration = 0;
+let loading = false;
+
+function updatePager(): void {
+  const multi = !!plan && plan.pages.length > 1;
+  $("pager").hidden = !multi;
+  if (!plan || !multi) return;
+  $("page-no").textContent = String(plan.page + 1);
+  $("page-count").textContent = String(plan.pages.length);
+  const off = loading || busy;
+  $<HTMLButtonElement>("page-prev").disabled = off || plan.page === 0;
+  $<HTMLButtonElement>("page-next").disabled = off || plan.page === plan.pages.length - 1;
+  $<HTMLButtonElement>("page-pick").disabled = off;
+}
+
+/** Makes a page of the (candidate or current) Document the Plan. */
+async function showPage(doc: { name: string; fileName: string; pages: PageSize[] }, index: number, t0 = performance.now()): Promise<void> {
+  const gen = ++loadGeneration;
+  loading = true;
+  updateButtons();
+  const status = plan ? $("plan-info") : $("engine-status");
+  status.textContent = doc.pages.length > 1 ? `Seite ${index + 1} wird geöffnet…` : "Plan wird geöffnet…";
   snapIndex = undefined;
   delete document.body.dataset.snapReady;
   try {
-    const t0 = performance.now();
-    const info = await engine.openPlan(await file.arrayBuffer());
-    plan = {
-      name: file.name.replace(/\.pdf$/i, ""),
-      fileName: file.name,
-      widthMm: info.widthPt * PT_TO_MM,
-      heightMm: info.heightPt * PT_TO_MM,
-    };
-    showDetails(info);
+    const info = await engine.openPage(index);
     const preview = await engine.renderPreview();
     const bitmap = await createImageBitmap(new ImageData(preview.pixels as Uint8ClampedArray<ArrayBuffer>, preview.widthPx, preview.heightPx));
+    if (gen !== loadGeneration) return;
+    const sameFile = plan?.fileName === doc.fileName && plan.pages === doc.pages;
+    plan = { ...doc, page: index, widthMm: info.widthPt * PT_TO_MM, heightMm: info.heightPt * PT_TO_MM };
+    showDetails(info);
 
     $("start").hidden = true;
     $("workspace").hidden = false;
     $("plan-chip").hidden = false;
-    $("plan-name").textContent = file.name;
-    $("export-status").replaceChildren();
-    $("result-img").hidden = true;
+    $("plan-name").textContent = doc.fileName;
+    if (!sameFile) {
+      $("export-status").replaceChildren();
+      $("result-img").hidden = true;
+    }
     viewer.setPlan(plan.widthMm, plan.heightMm, bitmap);
     minimap.setPlan(plan.widthMm, plan.heightMm, bitmap);
 
-    // Restore the last Clip if it fits this Plan (ADR 0007), else a sensible default.
+    // Restore the last Clip if it fits this page (ADR 0007), else a sensible default.
     const stored = loadStoredClip();
     const fits = stored && stored.x + stored.width <= plan.widthMm + 0.05 && stored.y + stored.height <= plan.heightMm + 0.05;
     setClip(fits ? stored : { x: 0, y: 0, width: plan.widthMm, height: Math.min(600, plan.heightMm) });
@@ -269,20 +304,73 @@ async function openPlan(file: File): Promise<void> {
     const secs = ((performance.now() - t0) / 1000).toFixed(1);
     $("plan-info").textContent = `${de(plan.widthMm)} × ${de(plan.heightMm)} mm · geladen in ${secs.replace(".", ",")} s`;
     $("engine-status").textContent = "";
+    document.body.dataset.page = String(index + 1);
+    loading = false;
+    updateButtons();
 
     $("snap-status").textContent = "Einrasten wird vorbereitet…";
     const t1 = performance.now();
-    snapIndex = await engine.snapTargets();
+    const targets = await engine.snapTargets();
+    if (gen !== loadGeneration) return;
+    snapIndex = targets;
     const n = snapIndex.vertical.pos.length + snapIndex.horizontal.pos.length;
     $("snap-status").textContent = `${n.toLocaleString("de-DE")} Linien zum Einrasten gefunden (${de((performance.now() - t1) / 1000)} s).`;
     document.body.dataset.snapReady = "1";
   } catch (e) {
-    busy.textContent = "";
+    if (gen !== loadGeneration) return;
+    status.textContent = "";
+    const msg = `${doc.pages.length > 1 ? `Seite ${index + 1}` : "Der Plan"} konnte nicht geöffnet werden: ${String(e)}`;
+    if (plan) $("plan-info").textContent = msg;
+    else $("start-error").textContent = msg;
+  } finally {
+    if (gen === loadGeneration) {
+      loading = false;
+      updateButtons();
+    }
+  }
+}
+
+/** Opens a file: straight away if it has one page, else after the page picker. */
+async function openFile(file: File): Promise<void> {
+  if (picker.isOpen || loading) return;
+  const t0 = performance.now();
+  const status = plan ? $("plan-info") : $("engine-status");
+  const before = status.textContent;
+  status.textContent = "Plan wird geöffnet…";
+  $("start-error").textContent = "";
+  let pages: PageSize[];
+  try {
+    pages = (await engine.openDocument(await file.arrayBuffer())).pages;
+    if (pages.length === 0) throw new Error("keine Seiten");
+  } catch (e) {
+    status.textContent = plan ? before : "";
     const msg = `Der Plan konnte nicht geöffnet werden: ${String(e)}`;
     if (plan) $("plan-info").textContent = msg;
     else $("start-error").textContent = msg;
+    return;
   }
+  const doc = { name: file.name.replace(/\.pdf$/i, ""), fileName: file.name, pages };
+  if (pages.length === 1) return showPage(doc, 0, t0);
+
+  status.textContent = plan ? before : "";
+  const index = await picker.pick(pages, file.name);
+  if (index === undefined) {
+    // Cancelled: keep the current Plan, or stay on the start screen.
+    await engine.discardDocument();
+    return;
+  }
+  return showPage(doc, index);
 }
+
+async function pickPage(): Promise<void> {
+  if (!plan || picker.isOpen || loading || busy) return;
+  const index = await picker.pick(plan.pages, plan.fileName, plan.page);
+  if (index !== undefined && plan && index !== plan.page) await showPage(plan, index);
+}
+
+$("page-pick").addEventListener("click", () => void pickPage());
+$("page-prev").addEventListener("click", () => plan && plan.page > 0 && void showPage(plan, plan.page - 1));
+$("page-next").addEventListener("click", () => plan && plan.page < plan.pages.length - 1 && void showPage(plan, plan.page + 1));
 
 const input = $<HTMLInputElement>("file");
 input.disabled = false;
@@ -291,7 +379,7 @@ $("choose").addEventListener("click", () => input.click());
 $("open-other").addEventListener("click", () => input.click());
 input.addEventListener("change", () => {
   const file = input.files?.[0];
-  if (file) void openPlan(file);
+  if (file) void openFile(file);
   input.value = ""; // allow re-opening the same file
 });
 
@@ -311,7 +399,7 @@ window.addEventListener("drop", (e) => {
   dragDepth = 0;
   document.body.classList.remove("dragging");
   const file = [...(e.dataTransfer?.files ?? [])].find((f) => /\.pdf$/i.test(f.name) || f.type === "application/pdf");
-  if (file) void openPlan(file);
+  if (file) void openFile(file);
   else if (!plan) $("start-error").textContent = "Bitte eine PDF-Datei ablegen.";
 });
 
@@ -324,8 +412,8 @@ let busy = false;
 /** SVG is not available while tiling (ADR 0013); nothing runs twice at once. */
 function updateButtons(): void {
   const tiling = tilesPanel.settings.enabled;
-  exportButton.disabled = busy || tiling;
-  pdfButton.disabled = busy || (tiling && !currentGrid());
+  exportButton.disabled = busy || loading || tiling;
+  pdfButton.disabled = busy || loading || (tiling && !currentGrid());
   const why = tiling ? "SVG-Export ist beim Aufteilen auf Blätter nicht verfügbar." : "";
   $("svg-wrap").title = why;
   exportButton.title = why;
@@ -334,6 +422,7 @@ function updateButtons(): void {
   exportButton.classList.toggle("primary", !tiling);
   pdfButton.classList.toggle("primary", tiling);
   pdfButton.parentElement!.classList.toggle("tiling", tiling);
+  updatePager();
 }
 updateButtons();
 
@@ -352,7 +441,7 @@ exportButton.addEventListener("click", async () => {
   updateButtons();
   status.textContent = "SVG wird berechnet…";
   try {
-    const r = await engine.exportSvg({ clip, mergeMode, textAsPaths, reuseShapes: false });
+    const r = await engine.exportSvg({ clip, page: plan.page, mergeMode, textAsPaths, reuseShapes: false });
     const blob = new Blob([r.svg as BlobPart], { type: "image/svg+xml" });
     const size = blob.size;
 
@@ -379,7 +468,7 @@ exportButton.addEventListener("click", async () => {
     resultImg.src = URL.createObjectURL(blob);
     resultImg.hidden = false;
 
-    await saveFile(blob, `${plan.name}_Ausschnitt.svg`, "SVG-Grafik", "image/svg+xml", ".svg");
+    await saveFile(blob, `${exportBase(plan.name, plan.page, plan.pages.length)}.svg`, "SVG-Grafik", "image/svg+xml", ".svg");
   } catch (e) {
     status.textContent = `SVG-Export fehlgeschlagen: ${String(e)}`;
   } finally {
@@ -396,7 +485,7 @@ pdfButton.addEventListener("click", async () => {
   updateButtons();
   status.textContent = "PDF wird erstellt…";
   try {
-    const r = await engine.exportPdf({ clip, sourceName: plan.fileName });
+    const r = await engine.exportPdf({ clip, page: plan.page, sourceName: sourceLabel(plan.fileName, plan.page, plan.pages.length) });
     const blob = new Blob([r.pdf as BlobPart], { type: "application/pdf" });
     status.replaceChildren();
     note(`PDF: ${de(blob.size / MB, 2)} MB · ${de(r.seconds)} s · Inhalte außerhalb des Ausschnitts entfernt`);
@@ -407,7 +496,7 @@ pdfButton.addEventListener("click", async () => {
         "warn",
       );
     $("result-img").hidden = true;
-    await saveFile(blob, `${plan.name}_Ausschnitt.pdf`, "PDF-Dokument", "application/pdf", ".pdf");
+    await saveFile(blob, `${exportBase(plan.name, plan.page, plan.pages.length)}.pdf`, "PDF-Dokument", "application/pdf", ".pdf");
   } catch (e) {
     status.textContent = `PDF-Export fehlgeschlagen: ${String(e)}`;
   } finally {
@@ -422,7 +511,7 @@ async function exportTiles(): Promise<void> {
   if (!plan || !g) return;
   const multipage = tilesPanel.settings.output === "multipage";
   const list = tiles(g);
-  const base = `${plan.name}_Ausschnitt`;
+  const base = exportBase(plan.name, plan.page, plan.pages.length);
 
   // Ask where to save first: the dialogs need the click that started the export.
   let folder: DirectoryHandle | undefined;
@@ -464,7 +553,8 @@ async function exportTiles(): Promise<void> {
     text.textContent = "Ausschnitt wird vorbereitet…";
     await engine.tilesBegin({
       clip,
-      sourceName: plan.fileName,
+      page: plan.page,
+      sourceName: sourceLabel(plan.fileName, plan.page, plan.pages.length),
       date: new Date(),
       multipage,
       rows: g.rows.length,
