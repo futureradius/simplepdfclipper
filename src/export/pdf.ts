@@ -11,6 +11,7 @@
 import type * as MuPDF from "mupdf";
 import type { ClipMm } from "./collect";
 import { concat, type Matrix } from "./geometry";
+import { cropPageImages, jpegImageSizes } from "./pdfimagecrop";
 
 const MM_TO_PT = 72 / 25.4;
 /** PDF page size limit per side in units (at UserUnit 1: 200 in = 5,080 mm). */
@@ -88,6 +89,7 @@ export function exportPdf(mupdf: typeof MuPDF, planBytes: Uint8Array, opts: PdfE
       [bx0! - m, cy0, cx0, cy1], // left
       [cx1, cy0, bx1! + m, cy1], // right
     ];
+    const jpegSizes = jpegImageSizes(page);
     for (const r of bands) {
       if (r[2] - r[0] <= 0 || r[3] - r[1] <= 0) continue;
       page.createAnnotation("Redact").setRect(r);
@@ -98,6 +100,8 @@ export function exportPdf(mupdf: typeof MuPDF, planBytes: Uint8Array, opts: PdfE
       mupdf.PDFPage.REDACT_LINE_ART_REMOVE_IF_COVERED, // lines crossing the edge stay whole (ADR 0005)
       mupdf.PDFPage.REDACT_TEXT_REMOVE,
     );
+    // Images partly outside keep only the visible pixels (+ 1 px), not their full size.
+    cropPageImages(mupdf, doc, page, { x0: cx0, y0: cy0, x1: cx1, y1: cy1 }, jpegSizes);
 
     // 2./3. Rebuild the page around the Clip.
     const uuObj = obj.get("UserUnit");

@@ -32,8 +32,9 @@ double-click. No server, no upload, no installation.
    save, rename, delete, and to export or import them as a JSON file for colleagues).
    Picking one sets all export settings at once; the Clip stays (ADR 0015).
 
-Scanned Plans (pages that are images) work too: the PDF keeps only the pixels inside the
-Clip, and the SVG embeds only the part of the image inside it (ADR 0005).
+Scanned Plans (pages that are images) work too: the PDF, every Tile and the SVG embed
+only the part of the image inside the Clip, so a small Clip of a scan is a small file
+(ADR 0005).
 
 ## Roadmap
 
@@ -48,6 +49,7 @@ Clip, and the SVG embeds only the part of the image inside it (ADR 0005).
 - [x] Minimap and whole-Plan start view (#4)
 - [x] Multi-page PDFs: page picker, one page per export (#1)
 - [x] Named presets for export settings (#5)
+- [x] Scanned Plans: images cropped to the Clip in the PDF too (#22)
 
 ## Development
 

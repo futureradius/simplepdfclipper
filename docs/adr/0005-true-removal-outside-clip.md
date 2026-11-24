@@ -76,7 +76,8 @@ exactly where it did. Images inside pattern tiles are kept whole (they repeat in
 pattern space). The same scan: 0.51 MB. Tests: `src/export/imagecrop.test.ts`.
 
 In the PDF the redacted image keeps its full pixel size (mostly white), so a small Clip
-of a JPEG scan can be a little larger than the scan itself (2.0 vs. 1.6 MB). Accepted.
+of a JPEG scan can be a little larger than the scan itself (2.0 vs. 1.6 MB). Accepted. (Superseded
+by the next section.)
 
 ## Rotated pages (2026-11-17)
 
@@ -107,3 +108,35 @@ invisibly. Text: a glyph is kept whole if its centre is inside, else removed. Im
 visible pixels + 1 px, clipped visually (PDF side: #22). MuPDF 1.28 redaction cannot
 cut line art; how the PDF side does it is researched in #34. Until #35 is built, the
 "kept whole" rule above still describes the code.
+
+## Images cropped in the PDF too (2026-11-24, #22)
+
+After redaction a partly visible image still had its full pixel size, mostly white.
+Now step 1 is followed by a crop pass (`src/export/pdfimagecrop.ts`):
+
+- The redacted content stream is walked (`src/export/contentstream.ts`: a small
+  tokenizer, `q`/`Q`/`cm` tracking, `Do` followed into Form XObjects) to find where each
+  image XObject is drawn. The visible pixels are worked out as in the SVG (Clip + 1 px
+  border); an image drawn several times keeps the union of its visible windows.
+- The image's entry in the resource dictionary is swapped for a Form XObject with
+  BBox [0 0 1 1] that draws the cropped image in its sub-rectangle of the unit square.
+  The content streams stay byte for byte the same. An image that is never visible is
+  swapped for an empty Form.
+- Encoding: redaction rewrites partly covered images losslessly, so the source filter
+  is gone by then. The pixel sizes of the page's JPEG images are recorded before
+  redaction, and an image of such a size is stored as JPEG again (quality 90);
+  everything else is stored losslessly (Flate). Soft masks of the same size are cropped
+  with the image.
+- Left whole: stencil masks (`/ImageMask`, drawn in the fill colour), images with
+  `/Mask` or `/SMaskInData`, JPEG 2000, soft masks of another size than their image,
+  inline images, and images reachable from patterns, soft-mask groups or Type 3 fonts
+  (they are drawn in their own spaces, possibly repeated).
+
+The Tiled Export runs the same export again per Tile on the Clip PDF, so every Tile
+holds only its own pixels.
+
+Tests (`src/export/pdfimagecrop.test.ts`, generated A4 scans): a 300 dpi JPEG scan
+cropped to 50 × 60 mm keeps a ~593 × 711 px JPEG, the file is less than ¼ of the scan,
+and the page renders like the original area (< 1 % differing pixels at 3 px/mm); the
+same for a Tile on a Sheet; a Flate scan stays lossless; an image drawn twice; a soft
+mask.

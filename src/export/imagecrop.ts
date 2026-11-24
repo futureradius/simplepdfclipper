@@ -54,8 +54,9 @@ export function windowMatrix(matrix: Matrix, w: number, h: number, win: PixelWin
 }
 
 /** Copies a window out of a pixmap. */
-function cropPixmap(mupdf: typeof MuPDF, pix: MuPDF.Pixmap, win: PixelWindow): MuPDF.Pixmap {
-  const n = pix.getNumberOfComponents() + pix.getAlpha();
+export function cropPixmap(mupdf: typeof MuPDF, pix: MuPDF.Pixmap, win: PixelWindow): MuPDF.Pixmap {
+  // Bytes per pixel, alpha included (getNumberOfComponents() already counts alpha).
+  const n = pix.getStride() / pix.getWidth();
   const cw = win.x1 - win.x0;
   const ch = win.y1 - win.y0;
   const out = new mupdf.Pixmap(pix.getColorSpace()!, [0, 0, cw, ch], pix.getAlpha() !== 0);
