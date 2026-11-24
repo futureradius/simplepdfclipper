@@ -8,7 +8,9 @@ Status: accepted (2026-11-03)
   the Clip; amber for snap guides. No dark mode. Name shown as "simple pdf clipper".
 - **Start screen:** before a Plan is open, a drop zone ("Plan hierher ziehen") with a
   button to choose a file. PDFs can be dropped anywhere on the window, also later
-  to switch Plans.
+  to switch Plans. Above the drop zone, a short intro for first-time users says what the
+  tool does (SVG, PDF, Tiled Export); below it, a note says the Plan stays on this
+  computer, is not uploaded, and the tool works offline (added 2026-11-24).
 - **Workspace:** panel with three steps (1 Plan, 2 Ausschnitt, 3 Export), the
   precision view in the middle with a floating toolbar (zoom, Planbreite,
   Ausschnitt, 1:1), the overview on the right. Technical options (text as paths,

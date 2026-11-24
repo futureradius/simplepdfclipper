@@ -38,6 +38,8 @@ test("opens from file://, snaps the Clip in the precision view and exports an SV
   await page.goto(APP);
   await expect(page.locator("#choose")).toBeEnabled({ timeout: 60_000 });
   await expect(page.locator("#start")).toBeVisible();
+  await expect(page.locator("#start h1")).toHaveText("Genaue Ausschnitte aus großen Plänen");
+  await expect(page.locator("#start .local")).toContainText("nicht hochgeladen");
   // The tab icon is the header logo, not a second, different one.
   const icon = decodeURIComponent((await page.locator('link[rel="icon"]').getAttribute("href"))!);
   for (const d of await page.locator(".brand svg path").evaluateAll((ps) => ps.map((p) => p.getAttribute("d"))))
