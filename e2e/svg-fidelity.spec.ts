@@ -27,6 +27,7 @@ function renderReference(page: mupdf.Page, clip: ClipMm): Uint8Array {
 
 test("exported SVG looks like the PDF", async ({ page }) => {
   test.skip(!existsSync(PLAN), "run `npm run testplan` first");
+  test.setTimeout(300_000); // four exports plus pixel diffs: ~1.8 min alone, over 2 min in the full run
   const doc = mupdf.Document.openDocument(readFileSync(PLAN), "application/pdf");
   const pdfPage = doc.loadPage(0);
   const ref = renderReference(pdfPage, CLIP);
