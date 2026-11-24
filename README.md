@@ -71,5 +71,5 @@ npm run test:e2e   # opens dist/index.html via file:// in Edge (Playwright)
 AGPL-3.0-or-later, because it bundles [MuPDF.js](https://mupdf.readthedocs.io/)
 (AGPL-3.0-or-later, © Artifex Software). See [`LICENSE`](LICENSE).
 
-The page icon (scissors) is by [Noah Jacobus](https://www.svgrepo.com/author/Noah%20Jacobus/),
-from the "Chunk 16px Thick Interface Icons" collection on [SVG Repo](https://www.svgrepo.com/svg/535606/scissors), public domain.
+The logo (also the tab icon) is the "crop" icon from [Lucide](https://lucide.dev/icons/crop),
+© Lucide Contributors, ISC license.
