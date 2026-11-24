@@ -232,7 +232,7 @@ export function exportPdf(options: PdfExportRequest): PdfExportResult {
   checkPage(options.page);
   const t0 = performance.now();
   const r = runPdfExport(lib(), plan().bytes, { clip: options.clip, page: options.page, sourceName: options.sourceName, date: new Date() });
-  return { pdf: r.pdf, normalised: r.normalised, seconds: (performance.now() - t0) / 1000 };
+  return { pdf: r.pdf, normalised: r.normalised, uncut: r.uncut, seconds: (performance.now() - t0) / 1000 };
 }
 
 // ---- Tiled Export (ADR 0013) -------------------------------------------------
@@ -249,7 +249,8 @@ export function tilesBegin(job: TilesBeginRequest): void {
 export function tile(t: Tile): TileResult {
   if (!tiled) throw new Error("no Tiled Export running");
   const pdf = tiled.tile(t);
-  return pdf ? { pdf } : {};
+  const uncut = tiled.takeUncut();
+  return pdf ? { pdf, uncut } : { uncut };
 }
 
 /** Ends the Tiled Export; returns the multipage file in multipage mode. */

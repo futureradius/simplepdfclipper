@@ -36,6 +36,11 @@ Scanned Plans (pages that are images) work too: the PDF, every Tile and the SVG 
 only the part of the image inside the Clip, so a small Clip of a scan is a small file
 (ADR 0005).
 
+Lines and shapes that cross the Clip edge are cut exactly there in every export: nothing
+of them stays in the file outside the Clip, not even invisibly. A cut line ends flat at
+the edge; dashes continue as before. Text at the edge keeps a letter whole if its centre
+is inside, otherwise the letter is removed (ADR 0005).
+
 ## Roadmap
 
 - [x] Optimised SVG export (merging, real text, hatching, clip shapes)
@@ -50,6 +55,7 @@ only the part of the image inside the Clip, so a small Clip of a scan is a small
 - [x] Multi-page PDFs: page picker, one page per export (#1)
 - [x] Named presets for export settings (#5)
 - [x] Scanned Plans: images cropped to the Clip in the PDF too (#22)
+- [x] Lines and shapes cut exactly at the Clip edge in every export (#35)
 
 ## Development
 

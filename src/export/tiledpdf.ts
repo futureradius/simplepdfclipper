@@ -35,13 +35,17 @@ export function tileLabel(t: Tile, job: Pick<TiledJob, "rows" | "columns" | "sou
 export class TiledPdfExport {
   private readonly clipBytes: Uint8Array;
   private readonly book: MuPDF.PDFDocument | undefined;
+  /** Content streams not cut at the edge since the last takeUncut() (pdf.ts). */
+  private uncut = 0;
 
   constructor(
     private readonly mupdf: typeof MuPDF,
     planBytes: Uint8Array,
     private readonly job: TiledJob,
   ) {
-    this.clipBytes = exportPdf(mupdf, planBytes, { clip: job.clip, page: job.page, sourceName: job.sourceName, date: job.date }).pdf;
+    const clip = exportPdf(mupdf, planBytes, { clip: job.clip, page: job.page, sourceName: job.sourceName, date: job.date });
+    this.clipBytes = clip.pdf;
+    this.uncut = clip.uncut;
     this.book = job.multipage ? new mupdf.PDFDocument() : undefined;
   }
 
@@ -60,6 +64,7 @@ export class TiledPdfExport {
         `Kachel ${t.name} (${where}) aus ${job.sourceName}: links ${mm(job.clip.x + t.x)} mm, oben ${mm(job.clip.y + t.y)} mm, ` +
         `${mm(t.width)} × ${mm(t.height)} mm. Exportiert am ${day}. Inhalte außerhalb der Kachel wurden entfernt.`,
     });
+    this.uncut += r.uncut;
     if (!this.book) return r.pdf;
     const src = this.mupdf.Document.openDocument(r.pdf, "application/pdf") as MuPDF.PDFDocument;
     try {
@@ -68,6 +73,13 @@ export class TiledPdfExport {
       src.destroy();
     }
     return undefined;
+  }
+
+  /** Content streams whose paths could not be cut since the last call. */
+  takeUncut(): number {
+    const n = this.uncut;
+    this.uncut = 0;
+    return n;
   }
 
   /** The multipage file (multipage mode only). */

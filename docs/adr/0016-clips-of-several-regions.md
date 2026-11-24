@@ -1,7 +1,8 @@
 # 16. Clips of several freely arranged Regions
 
-Status: accepted (2026-11-24, issue #6, decided in #14); supersedes ADR 0002. Not built
-yet: #35, #36, #37, #38.
+Status: accepted (2026-11-24, issue #6, decided in #14); supersedes ADR 0002. Built:
+cutting at the Clip edge (#35, for one-Region Clips; ADR 0005). Not built yet: #36, #37,
+#38.
 
 ## Context
 

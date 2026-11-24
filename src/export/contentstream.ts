@@ -10,6 +10,17 @@ const DELIM = new Set([40, 41, 60, 62, 91, 93, 123, 125, 47, 37]);
 export interface ContentOp {
   op: string;
   operands: string[];
+  /** Byte range of the operator with its operands (comments before them included). */
+  start: number;
+  end: number;
+}
+
+/** A number as PDF writes it: 12 significant digits (a scale rounded to 4 decimals
+ * shifts content 14 m away from the origin by ~0.15 mm), never in exponent notation
+ * (which PDF can't read: blank page). Leftovers of float maths below 1e-6 are 0. */
+export function pdfNumber(v: number): string {
+  const r = Number(v.toPrecision(12));
+  return Math.abs(r) < 1e-6 ? "0" : String(r);
 }
 
 const text = (buf: Uint8Array, a: number, b: number) => {
@@ -63,6 +74,7 @@ export function* tokenize(buf: Uint8Array): Generator<ContentOp> {
   const n = buf.length;
   let i = 0;
   let operands: string[] = [];
+  let start = -1;
   while (i < n) {
     const c = buf[i]!;
     if (WS.has(c)) {
@@ -70,6 +82,7 @@ export function* tokenize(buf: Uint8Array): Generator<ContentOp> {
       continue;
     }
     const s = i;
+    if (start < 0) start = i;
     if (c === 37) {
       while (i < n && buf[i] !== 10 && buf[i] !== 13) i++;
       continue;
@@ -99,8 +112,9 @@ export function* tokenize(buf: Uint8Array): Generator<ContentOp> {
         while (i < n && !(WS.has(buf[i - 1]!) && buf[i] === 69 && buf[i + 1] === 73 && (i + 2 >= n || WS.has(buf[i + 2]!) || DELIM.has(buf[i + 2]!)))) i++;
         i += 2;
       }
-      yield { op: tok, operands };
+      yield { op: tok, operands, start, end: i };
       operands = [];
+      start = -1;
       continue;
     }
     operands.push(text(buf, s, i));
