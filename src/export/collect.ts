@@ -33,6 +33,8 @@ import {
 } from "./ir";
 import { encodeVisibleImage } from "./imagecrop";
 import { encodePath } from "./pathdata";
+import { clipFill, cutStroke, fromPathData, rectHalfPlanes, toPathData, type HalfPlane, type LineCap } from "./pathcut";
+import { GlyphBoxes } from "./glyphbox";
 
 export interface ClipMm {
   x: number;
@@ -53,6 +55,22 @@ const PT_TO_UNITS = (25.4 / 72) * UNITS_PER_MM;
 const HAIRLINE = 0.05 * UNITS_PER_MM;
 const CAPS = ["butt", "round", "square", "round"] as const; // Triangle -> round
 const JOINS = ["miter", "round", "bevel", "miter"] as const; // MiterXPS -> miter
+const CAP_NUMBER: Record<StrokeStyle["cap"], LineCap> = { butt: 0, round: 1, square: 2 };
+
+/** Bounding box of the points of path data. */
+function walkData(d: PathData): Rect {
+  const r = emptyRect();
+  let i = 0;
+  while (i < d.length) {
+    const op = d[i++];
+    const n = op === Op.Curve ? 3 : op === Op.Close ? 0 : 1;
+    for (let k = 0; k < n; k++) {
+      extend(r, d[i]!, d[i + 1]!);
+      i += 2;
+    }
+  }
+  return r;
+}
 
 const hex2 = (v: number) =>
   Math.round(Math.min(1, Math.max(0, v)) * 255)
@@ -152,6 +170,8 @@ export function collect(mupdf: typeof MuPDF, page: MuPDF.Page, opts: CollectOpti
   const width = Math.round(clip.width * UNITS_PER_MM);
   const height = Math.round(clip.height * UNITS_PER_MM);
   const area: Rect = { x0: 0, y0: 0, x1: width, y1: height };
+  /** Paths are cut at the area (ADR 0005, #35). */
+  const areaPlanes: HalfPlane[] = rectHalfPlanes(area);
   const pageToUnits: Matrix = [
     PT_TO_UNITS,
     0,
@@ -211,6 +231,15 @@ export function collect(mupdf: typeof MuPDF, page: MuPDF.Page, opts: CollectOpti
       clipStack.push({ ...t });
       return;
     }
+    const cut = clipFill(fromPathData(d), areaPlanes);
+    if (cut && !cut.length) {
+      pushRectClip({ x0: 1, y0: 1, x1: 0, y1: 0 }); // nothing of it inside: an empty clip hides everything
+      return;
+    }
+    if (cut) {
+      d = toPathData(cut);
+      bbox = intersect(bbox, area);
+    }
     const def: ClipDef = { rect: null, d, evenOdd, parent: t.id };
     const key = "p" + (evenOdd ? 1 : 0) + encodePath(d) + "|" + t.id;
     clipStack.push({ rect: intersect(t.rect, bbox), id: clipId(key, def), exact: false });
@@ -254,8 +283,10 @@ export function collect(mupdf: typeof MuPDF, page: MuPDF.Page, opts: CollectOpti
         const m = concat(trm as Matrix, ctm);
         const g: Glyph = { font, m, gid, uni, adv: font.advanceGlyph(gid, wmode) };
         const box = glyphBox(g);
-        if (!recording && (!meets(box, top().rect) || !meets(box, area))) {
-          flush(); // glyph outside the Clip: removed (ADR 0005)
+        // A glyph is kept whole if the centre of its box (glyphbox.ts) is inside the Clip, else
+        // removed (ADR 0005, #35); the same rule as in the PDF.
+        if (!recording && (!meets(box, top().rect) || !meets(box, area) || (!contains(area, box) && !centreInside(font, trm as Matrix, gid, wmode, ctm)))) {
+          flush();
           return;
         }
         if (run.length > 0 && !continues(run[run.length - 1]!, g)) flush();
@@ -266,6 +297,12 @@ export function collect(mupdf: typeof MuPDF, page: MuPDF.Page, opts: CollectOpti
       },
     });
     flush();
+  };
+
+  const glyphBoxes = new GlyphBoxes(mupdf);
+  const centreInside = (font: MuPDF.Font, trm: Matrix, gid: number, wmode: number, ctm: Matrix) => {
+    const [x, y] = glyphBoxes.get(font, trm, gid, wmode, ctm).centre;
+    return x >= 0 && x <= width && y >= 0 && y <= height;
   };
 
   /** Does glyph g directly follow glyph p on the same baseline? */
@@ -360,8 +397,17 @@ export function collect(mupdf: typeof MuPDF, page: MuPDF.Page, opts: CollectOpti
   const dev = new mupdf.Device({
     fillPath(path, evenOdd, ctm, cs, color, alpha) {
       if (suppress) return;
-      const { d, bbox } = walkPath(path, ctm as Matrix);
+      let { d, bbox } = walkPath(path, ctm as Matrix);
       if (isEmpty(bbox)) return;
+      if (!recording) {
+        // Pattern tiles repeat in pattern space: only the filled area is cut.
+        const cut = clipFill(fromPathData(d), areaPlanes);
+        if (cut && !cut.length) return;
+        if (cut) {
+          d = toPathData(cut);
+          bbox = intersect(bbox, area);
+        }
+      }
       const clipId = clipFor(bbox);
       if (clipId === undefined) return;
       sink.push({ kind: "path", d, fill: colorToHex(cs, color), evenOdd, stroke: null, strokeStyle: null, alpha, bbox, clip: clipId });
@@ -374,7 +420,29 @@ export function collect(mupdf: typeof MuPDF, page: MuPDF.Page, opts: CollectOpti
       const bbox = expand(raw, style.width * 0.75);
       const clipId = clipFor(bbox);
       if (clipId === undefined) return;
-      sink.push({ kind: "path", d, fill: null, evenOdd: false, stroke: colorToHex(cs, color), strokeStyle: style, alpha, bbox, clip: clipId });
+      const color_ = colorToHex(cs, color);
+      const paints = recording
+        ? null
+        : cutStroke(fromPathData(d), areaPlanes, {
+            width: style.width,
+            cap: CAP_NUMBER[style.cap],
+            dashes: style.dashes,
+            phase: style.dashPhase,
+          });
+      if (!paints) {
+        sink.push({ kind: "path", d, fill: null, evenOdd: false, stroke: color_, strokeStyle: style, alpha, bbox, clip: clipId });
+        return;
+      }
+      for (const p of paints) {
+        if (!p.subs.length) continue;
+        const s: StrokeStyle = { ...style };
+        if (p.cap !== undefined) s.cap = CAPS[p.cap]!;
+        if (p.dash === null) s.dashes = null;
+        else if (p.dash) s.dashPhase = p.dash.phase;
+        const pd = toPathData(p.subs);
+        const pb = expand(walkData(pd), s.width * 0.75);
+        sink.push({ kind: "path", d: pd, fill: null, evenOdd: false, stroke: color_, strokeStyle: s, alpha, bbox: pb, clip: clipId });
+      }
     },
     clipPath(path, evenOdd, ctm) {
       const { d, bbox, rect } = walkPath(path, ctm as Matrix);

@@ -510,6 +510,11 @@ exportButton.addEventListener("click", async () => {
   }
 });
 
+/** A content stream the path cut could not read (ADR 0005, #35). */
+const UNCUT_HINT =
+  "Hinweis: Ein Teil des Plans ließ sich nicht vollständig lesen. Linien, die dort über den Rand des Ausschnitts reichen, " +
+  "wurden nicht an der Kante abgeschnitten (sie sind nur verdeckt).";
+
 // PDF export (for documentation; ADR 0005)
 pdfButton.addEventListener("click", async () => {
   if (!plan) return;
@@ -526,6 +531,7 @@ pdfButton.addEventListener("click", async () => {
     const blob = new Blob([r.pdf as BlobPart], { type: "application/pdf" });
     void busyWindow.end();
     note(`PDF: ${de(blob.size / MB, 2)} MB · ${de(r.seconds)} s · Inhalte außerhalb des Ausschnitts entfernt`);
+    if (r.uncut > 0) note(UNCUT_HINT, "warn");
     if (!r.normalised)
       note(
         "Der Ausschnitt ist länger als 5,08 m. Das PDF behält deshalb den Maßstabsfaktor (UserUnit) des Plans; " +
@@ -576,6 +582,7 @@ async function exportTiles(): Promise<void> {
   const zipped: ZipEntry[] = [];
   let bytes = 0;
   let done = 0;
+  let uncut = 0;
   try {
     await engine.tilesBegin({
       clip,
@@ -592,6 +599,7 @@ async function exportTiles(): Promise<void> {
       busyWindow.text(`Kachel ${done + 1} von ${list.length} (${t.name})…`);
       busyWindow.progress(done, list.length);
       const r = await engine.tile(t);
+      uncut += r.uncut ?? 0;
       if (r.pdf) {
         bytes += r.pdf.length;
         const name = `${base}_Kachel_${t.name}.pdf`;
@@ -634,6 +642,7 @@ async function exportTiles(): Promise<void> {
         : "Inhalte außerhalb jeder Kachel entfernt. Die Blätter ohne Rand Kante an Kante zusammensetzen.",
       "muted",
     );
+    if (uncut > 0) note(UNCUT_HINT, "warn");
   } catch (e) {
     await engine.tilesAbort().catch(() => undefined);
     void busyWindow.end();

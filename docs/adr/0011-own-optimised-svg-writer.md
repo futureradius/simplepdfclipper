@@ -32,8 +32,10 @@ merged (`merge.ts`) and serialised (`svg.ts`):
   encoding wins.
 - **No `<symbol>`/`<use>` instancing.** Merging already puts repeated shapes into one
   path; `<use>` per instance would add elements.
-- Items entirely outside the Clip are dropped; items crossing the edge are kept whole
-  and cut by the viewBox (ADR 0005).
+- Items entirely outside the Clip are dropped. Since #35, paths crossing the edge are
+  cut there (fills, strokes and clip paths; `src/export/pathcut.ts`) and a glyph on the
+  edge stays only if its centre is inside (ADR 0005). Pattern tiles are not cut: they
+  repeat in pattern space and show only inside their (cut) fill area.
 - **PDF clip paths** become `<clipPath>` elements: rectangles as `<rect>` (and left
   out entirely when they do not cut anything), other shapes as exact `<path>`
   (e.g. the schedule's slanted bands). Nested clips chain via `clip-path` on the

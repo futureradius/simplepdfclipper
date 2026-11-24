@@ -60,8 +60,9 @@ button is disabled while it is switched on, with a note and tooltip saying why.
   `exportPdf` (removal per Tile), placed on its Sheet. One engine call per Tile, so the
   UI shows progress and can cancel. Test Plan, Clip 1188.9 × 600 mm on A4: 21 Tiles in
   2.3 s, 0.34 MB in total.
-- On a Sheet the Tile content is clipped to the Tile (`re W n`): lines kept whole across
-  the edge (ADR 0005) would otherwise show in the Margin.
+- On a Sheet the Tile content is clipped to the Tile (`re W n`). Paths are cut at the
+  Tile edge (ADR 0005, #35), but line widths, caps and glyphs kept whole at the edge
+  would otherwise reach into the Margin.
 - Cut marks: 0.1 pt black lines, 1 mm away from each Tile corner, up to 5 mm long; need
   a Margin of at least 2 mm. Tile label: 7 pt grey base-14 Helvetica (not embedded,
   WinAnsi), needs at least 4 mm. A Tile too narrow for the full label gets just its name.

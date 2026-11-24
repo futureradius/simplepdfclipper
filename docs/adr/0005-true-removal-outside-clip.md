@@ -1,6 +1,6 @@
 # 5. Content outside the Clip is actually removed
 
-Status: accepted (2026-11-03)
+Status: accepted (2026-11-03); objects crossing the edge are cut since 2026-11-24 (#35)
 
 ## Context
 
@@ -18,7 +18,8 @@ SVG export only ever contains content within the Clip.
 
 ### Objects crossing the Clip edge
 
-Lines and shapes that are partly inside the Clip are kept whole
+(Superseded on 2026-11-24 by "Paths are cut" below.) Lines and shapes that are partly
+inside the Clip are kept whole
 (`REDACT_LINE_ART_REMOVE_IF_COVERED`); the page box cuts them visually at the edge.
 Removing everything that touches the outside (`REMOVE_IF_TOUCHED`) would delete grid
 lines and bars crossing the Clip.
@@ -28,7 +29,7 @@ little are acceptable.
 
 ## Consequences
 
-The file still contains the invisible remainder of crossing lines and shapes. That
+(Until #35.) The file still contains the invisible remainder of crossing lines and shapes. That
 reveals at most their extent, not readable schedule content. Accepted.
 
 ## Implementation (2026-11-03, `src/export/pdf.ts`)
@@ -58,7 +59,7 @@ differing pixels at 3 px/mm; text outside (the Plan title) absent from the page 
 and from the decompressed file; Clip > 5,080 mm keeps UserUnit and renders
 identically. Test Plan Clip 1188.9 × 600 mm: 0.19 MB (Plan 4.2 MB), ~1 s.
 
-Known limit: a path entirely outside the Clip that crosses from one band into
+Known limit (gone since #35: the path cut removes such paths): a path entirely outside the Clip that crosses from one band into
 another without being covered by either band alone (e.g. a diagonal through the
 corner region) is kept, invisible beyond the page edge.
 
@@ -97,7 +98,7 @@ Tests: `src/export/rotate.test.ts` (pages at 0/90/180/270 with an image, shapes,
 and text: PDF, Tile and SVG match the displayed area; text outside removed; no exponent
 notation), `e2e/rotated.spec.ts`.
 
-## Paths are cut, not kept whole (decided 2026-11-24, #14; to be built in #35)
+## Paths are cut, not kept whole (decided 2026-11-24, #14; built in #35)
 
 With several Regions (ADR 0016) a line kept whole would run invisibly through the
 neighbouring Regions, and some whiteboard tools ignore SVG clip paths. So every export
@@ -106,8 +107,7 @@ fills exactly (curves too), strokes end at the edge without caps sticking out, d
 patterns continue with the right phase. Nothing of a cut path remains outside, not even
 invisibly. Text: a glyph is kept whole if its centre is inside, else removed. Images:
 visible pixels + 1 px, clipped visually (PDF side: #22). MuPDF 1.28 redaction cannot
-cut line art; how the PDF side does it is researched in #34. Until #35 is built, the
-"kept whole" rule above still describes the code.
+cut line art; how the PDF side does it is researched in #34. Built in #35: see the last section.
 
 ## Images cropped in the PDF too (2026-11-24, #22)
 
@@ -140,3 +140,84 @@ cropped to 50 × 60 mm keeps a ~593 × 711 px JPEG, the file is less than ¼ of 
 and the page renders like the original area (< 1 % differing pixels at 3 px/mm); the
 same for a Tile on a Sheet; a Flate scan stays lossless; an image drawn twice; a soft
 mask.
+
+## Paths cut at the edge: implementation (2026-11-24, #35)
+
+The geometry is shared (`src/export/pathcut.ts`, pure functions). The Clip is a set of
+half-planes, so the PDF side cuts in each path's own user space (exact under any
+transformation: rotated pages, non-uniform scales, UserUnit) and the SVG side in export
+units.
+
+- **Fills and clip paths:** each subpath is clipped on its own against each half-plane
+  (Sutherland–Hodgman with curves): segments are split where they cross the edge
+  (Béziers by de Casteljau at the roots of a cubic, never flattened), the pieces
+  outside are dropped and the gap is closed along the edge. Every point inside keeps
+  its winding number, so non-zero and even-odd fills stay correct. A clip path with
+  nothing inside becomes an empty clip.
+- **Strokes:** the centre line is cut at the edge; consecutive pieces inside stay one
+  subpath (their joins stay); a closed subpath that crosses the edge is opened after a
+  piece outside. A cut end gets no cap. PDF and SVG have one cap style per stroke, so
+  where a run has a cut end and an original end, the original end is emulated: a square
+  cap by extending the end by half the line width (then butt caps), a round cap by a
+  zero-length subpath at the end (a dot, painted with round caps).
+- **Dashes:** each run continues the pattern with the phase at its start (phase + arc
+  length, Gauss–Legendre for curves); dashed closed subpaths are split where the pattern
+  restarts. With round or square caps, a dash that is "on" at a cut is taken out as its
+  own piece (butt at the cut), and the rest of the run starts in the middle of the next gap.
+- **Fill + stroke** (`B`, `b`): the fill gets the clipped area, the stroke the cut centre
+  line. Under transparency (alpha < 1, a blend mode, a soft mask) several paints of one
+  path would overlap differently from the original, so they are painted opaque inside a
+  transparency group (a Form XObject with `/Group`) that gets the alpha as a whole.
+
+**PDF** (`src/export/pdfpathcut.ts`): after redaction, the page content and the Form
+XObjects it draws are walked with our tokenizer (`contentstream.ts`, now with byte
+offsets), tracking `q`/`Q`/`cm`, `w`, `J`, `M`, `d` and `gs` (`/LW`, `/LC`, `/ML`, `/D`,
+`/CA`, `/ca`, `/BM`, `/SMask`). A path whose control points are all inside is copied
+byte for byte; any other is replaced by its cut geometry (numbers with 12 significant
+digits, never exponent notation). Redaction makes every Form a fresh copy for its one
+use, so forms are rewritten in place; a form drawn again anyway gets its own copy.
+Patterns, soft masks and Type 3 glyphs are not followed (they draw in their own spaces
+and show only through paths that are cut). A stream that can't be read is left as it
+was and counted; the UI then says that lines there are only hidden at the edge.
+
+**Text** follows one rule in PDF and SVG (`src/export/glyphbox.ts`): a glyph's box is
+its advance across and the font's descender to ascender up (as in MuPDF's structured
+text; MuPDF.js has no ascender call, so one glyph per font is run through a display list
+into structured text). The glyph is kept whole if the box centre is inside, else removed.
+Measured on MuPDF 1.28: redaction removes a glyph as soon as this box, shrunk by 10 % on
+each side, touches a redaction area. That would also remove glyphs mostly inside, so the
+PDF export now removes content in stages:
+
+1. bands 200 pt away from the Clip: text there, and the line art they cover;
+2. bands at the Clip: image pixels and line art, no text;
+3. the glyphs left near the Clip are listed (`src/export/pdfglyphs.ts`); the outside is
+   redacted as rectangles that leave out the (shrunk) boxes of the kept glyphs crossing
+   the edge; a glyph to remove that reaches outside only under such a kept glyph gets a
+   tiny quad of its own on a point no kept glyph covers;
+4. the path cut;
+5. the image crop.
+
+A glyph with its centre inside that reaches more than 200 pt (70 mm) outside is removed
+in step 1. Accepted.
+
+**SVG** (`collect.ts`): fills, strokes and clip paths are cut in export units as they
+are collected (not inside pattern tiles); a cut stroke becomes one item per paint
+(another cap or dash phase). A translucent stroke with a round-cap dot is a little
+darker where the dot overlaps the line; accepted (rare).
+
+**Visible change at the edge:** ink that parts outside put inside is gone: the cap of a
+dash ending just outside, a round dot centred just outside, the half width of a thick
+line whose centre line runs just outside, the notch of a diagonal butt end, a mitre tip
+of a vertex outside. All of it lies within half a line width of the edge. Test Plan,
+Clip 1188.9 × 600 mm: 0.021 % of pixels differ (was 0.003 %), 1.3 s instead of 1.1 s;
+600 × 6000 mm: 2.3 s instead of 2.6 s.
+
+Tests: `src/export/pathcut.test.ts` (geometry: curves, even-odd and non-zero, a rotated
+non-uniform transformation, caps, dash phase, closed subpaths) and
+`src/export/edgecut.test.ts` (a generated Plan with lines, curves, dashed and dotted
+lines with butt and round caps, square caps, an even-odd ring, a hatch, a clip path, a
+Form XObject drawn twice, ExtGState line settings, a translucent fill + stroke, and
+text): no path coordinate outside the Clip in the PDF, in every Tile and in the SVG; the
+picture matches the Plan area away from the edge (< 0.05 % of pixels at 8 px/mm); the
+text keeps "ABCD" where the D's centre is inside and "ABC" where it is outside, in PDF
+and SVG.

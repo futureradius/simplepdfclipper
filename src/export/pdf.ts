@@ -1,6 +1,7 @@
 // PDF export of the Clip (ADR 0005, 0006, 0009):
-//  1. everything outside the Clip is removed from the file by MuPDF redaction
-//     (not just hidden by a smaller page box),
+//  1. everything outside the Clip is removed from the file (not just hidden by a
+//     smaller page box): MuPDF redaction, glyphs on the edge by their centre, paths
+//     crossing the edge cut exactly there, images cropped,
 //  2. the page becomes exactly the Clip, at 1:1,
 //  3. if the Clip fits the normal PDF page size limit, the page is normalised to
 //     UserUnit 1 so every viewer shows it at the right size,
@@ -10,12 +11,17 @@
 
 import type * as MuPDF from "mupdf";
 import type { ClipMm } from "./collect";
+import { pdfNumber } from "./contentstream";
 import { concat, type Matrix } from "./geometry";
+import { removeGlyphsOutside } from "./pdfglyphs";
 import { cropPageImages, jpegImageSizes } from "./pdfimagecrop";
+import { cutPagePaths } from "./pdfpathcut";
 
 const MM_TO_PT = 72 / 25.4;
 /** PDF page size limit per side in units (at UserUnit 1: 200 in = 5,080 mm). */
 const MAX_UNITS = 14400;
+/** Text this far outside the Clip (pt) is removed by plain redaction, nearer glyphs one by one. */
+const TEXT_RING_PT = 200;
 
 /** Page = Sheet with the Clip placed on it (Tiled Export, ADR 0013). */
 export interface SheetLayout {
@@ -47,17 +53,12 @@ export interface PdfExport {
   /** The page was rescaled to UserUnit 1 (false: Clip too large, UserUnit kept). */
   normalised: boolean;
   userUnit: number;
+  /** Content streams that could not be read: their paths were not cut at the edge. */
+  uncut: number;
 }
 
 const num = (o: MuPDF.PDFObject, i: number) => o.get(i).asNumber();
-/** Matrix numbers need full precision: a scale rounded to 4 decimals shifts content
- * 14 m away from the origin by ~0.15 mm. */
-const f = (v: number) => {
-  const r = Number(v.toPrecision(12));
-  // PDF has no exponent notation: JS writes numbers below 1e-6 as "1.1e-13", which
-  // breaks the content stream (blank page). Such leftovers of float maths are 0.
-  return Math.abs(r) < 1e-6 ? "0" : String(r);
-};
+const f = pdfNumber;
 
 export function exportPdf(mupdf: typeof MuPDF, planBytes: Uint8Array, opts: PdfExportOptions): PdfExport {
   const { clip } = opts;
@@ -80,28 +81,38 @@ export function exportPdf(mupdf: typeof MuPDF, planBytes: Uint8Array, opts: PdfE
     const cx1 = cx0 + clip.width * MM_TO_PT;
     const cy1 = cy0 + clip.height * MM_TO_PT;
 
-    // 1. Redact everything outside the Clip: four bands around it, reaching far
-    //    beyond the page so content outside the page box goes too.
-    const m = Math.max(bx1! - bx0!, by1! - by0!);
-    const bands: [number, number, number, number][] = [
-      [bx0! - m, by0! - m, bx1! + m, cy0], // above
-      [bx0! - m, cy1, bx1! + m, by1! + m], // below
-      [bx0! - m, cy0, cx0, cy1], // left
-      [cx1, cy0, bx1! + m, cy1], // right
-    ];
+    // 1. Remove everything outside the Clip (ADR 0005, #35):
+    //    a. text away from the Clip, and line art covered by the area outside;
+    //    b. image pixels outside, and line art again (now on the smaller page);
+    //    c. glyphs near the edge whose centre is outside (whole glyphs stay or go);
+    //    d. paths crossing the edge are cut there;
+    //    e. partly visible images keep only their visible pixels (+ 1 px).
+    //    The redaction areas are four bands around the Clip, reaching far beyond the
+    //    page so content outside the page box goes too.
+    const clipRect = { x0: cx0, y0: cy0, x1: cx1, y1: cy1 };
     const jpegSizes = jpegImageSizes(page);
-    for (const r of bands) {
-      if (r[2] - r[0] <= 0 || r[3] - r[1] <= 0) continue;
-      page.createAnnotation("Redact").setRect(r);
-    }
-    page.applyRedactions(
-      false, // no black boxes
-      mupdf.PDFPage.REDACT_IMAGE_PIXELS, // images partly outside: remove those pixels
-      mupdf.PDFPage.REDACT_LINE_ART_REMOVE_IF_COVERED, // lines crossing the edge stay whole (ADR 0005)
-      mupdf.PDFPage.REDACT_TEXT_REMOVE,
-    );
-    // Images partly outside keep only the visible pixels (+ 1 px), not their full size.
-    cropPageImages(mupdf, doc, page, { x0: cx0, y0: cy0, x1: cx1, y1: cy1 }, jpegSizes);
+    const redact = (gap: number, image: number, lineArt: number, text: number) => {
+      const m = Math.max(bx1! - bx0!, by1! - by0!) + gap;
+      const bands: [number, number, number, number][] = [
+        [bx0! - m, by0! - m, bx1! + m, cy0 - gap], // above
+        [bx0! - m, cy1 + gap, bx1! + m, by1! + m], // below
+        [bx0! - m, cy0 - gap, cx0 - gap, cy1 + gap], // left
+        [cx1 + gap, cy0 - gap, bx1! + m, cy1 + gap], // right
+      ];
+      for (const r of bands) {
+        if (r[2] - r[0] <= 0 || r[3] - r[1] <= 0) continue;
+        page.createAnnotation("Redact").setRect(r);
+      }
+      page.applyRedactions(false, image, lineArt, text);
+    };
+    const P = mupdf.PDFPage;
+    // A glyph with its centre inside but reaching further out than this is removed in a.
+    redact(TEXT_RING_PT, P.REDACT_IMAGE_NONE, P.REDACT_LINE_ART_REMOVE_IF_COVERED, P.REDACT_TEXT_REMOVE);
+    redact(0, P.REDACT_IMAGE_PIXELS, P.REDACT_LINE_ART_REMOVE_IF_COVERED, P.REDACT_TEXT_NONE);
+    const far = Math.abs(bx0!) + Math.abs(by0!) + 2 * Math.max(bx1! - bx0!, by1! - by0!) + TEXT_RING_PT; // beyond all content
+    removeGlyphsOutside(mupdf, page, clipRect, far);
+    const cutStats = cutPagePaths(doc, page, clipRect);
+    cropPageImages(mupdf, doc, page, clipRect, jpegSizes);
 
     // 2./3. Rebuild the page around the Clip.
     const uuObj = obj.get("UserUnit");
@@ -123,7 +134,8 @@ export function exportPdf(mupdf: typeof MuPDF, planBytes: Uint8Array, opts: PdfE
       concat(page.getTransform() as Matrix, [1, 0, 0, 1, -cx0, -cy0]),
       [1 / k, 0, 0, -1 / k, ox, (clip.height * MM_TO_PT) / k + oy],
     );
-    // On a Sheet, lines kept whole across the Clip edge (ADR 0005) must not show in the Margin.
+    // On a Sheet, nothing may show in the Margin: glyphs kept whole at the edge, line
+    // widths and caps reaching over it.
     const clipPath = sheet ? `${f(ox)} ${f(oy)} ${f(unit(clip.width))} ${f(unit(clip.height))} re W n\n` : "";
     const prefix = `q ${clipPath}${t.map(f).join(" ")} cm\n`;
     const contents = obj.get("Contents");
@@ -191,7 +203,7 @@ export function exportPdf(mupdf: typeof MuPDF, planBytes: Uint8Array, opts: PdfE
     // Unreferenced objects (old content streams) are dropped.
     const pdf = doc.saveToBuffer("garbage=deduplicate,compress").asUint8Array().slice();
     page.destroy();
-    return { pdf, normalised, userUnit: normalised ? 1 : uu };
+    return { pdf, normalised, userUnit: normalised ? 1 : uu, uncut: cutStats.failed };
   } finally {
     doc.destroy();
   }

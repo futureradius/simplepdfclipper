@@ -82,6 +82,8 @@ export interface PdfExportResult {
   pdf: Uint8Array;
   /** Page rescaled to UserUnit 1 (false: Clip longer than 5,080 mm). */
   normalised: boolean;
+  /** Content streams that could not be read: their paths were not cut at the edge. */
+  uncut: number;
   seconds: number;
 }
 
@@ -91,6 +93,8 @@ export type TilesBeginRequest = TiledJob;
 export interface TileResult {
   /** The Tile as its own PDF (single files); absent in multipage mode. */
   pdf?: Uint8Array;
+  /** As in PdfExportResult, for this Tile (the Clip stage included in the first one). */
+  uncut?: number;
 }
 
 export type Request =
