@@ -22,3 +22,10 @@ Status: accepted (2026-11-03)
   page itself.
 
 Amended by ADR 0013 (Tiled Export): cut marks and a Tile label are added, inside the Margin only.
+
+Amended 2026-11-24 (issue #27): the "Save as" dialog opens **on the click, before** the
+SVG or PDF is computed, as in the Tiled Export. Edge allows the dialog only ~5 s after
+the click; a longer export used to fall back silently to a download, whose blob URL was
+revoked after 10 s. With Edge set to ask where to save, typing a new name took longer
+and the file was saved with 0 KB. Cancelling the dialog now exports nothing, and the
+download fallback keeps its blob URL until the next download.

@@ -1,7 +1,7 @@
 import { startEngine } from "./engine/client";
 import type { PlanInfo } from "./engine/protocol";
 import type { ClipMm } from "./export/index";
-import { chooseFolder, chooseSaveTarget, download, saveFile, writeToFolder, type DirectoryHandle } from "./ui/save";
+import { chooseFolder, chooseSaveTarget, download, writeToFolder, type DirectoryHandle } from "./ui/save";
 import { rowName, tiles, type TileGrid } from "./export/tilegrid";
 import { TilesPanel } from "./ui/tilespanel";
 import { zip, type ZipEntry } from "./ui/zip";
@@ -465,6 +465,9 @@ function note(text: string, cls = ""): void {
 exportButton.addEventListener("click", async () => {
   if (!plan) return;
   const { mergeMode, textAsPaths } = presets.current().svg;
+  // Ask where to save first: the dialog needs the click, which a long export outlasts.
+  const save = await chooseSaveTarget(`${exportBase(plan.name, plan.page, plan.pages.length)}.svg`, "SVG-Grafik", "image/svg+xml", ".svg");
+  if (!save) return; // cancelled
   busy = true;
   updateButtons();
   status.replaceChildren();
@@ -473,7 +476,7 @@ exportButton.addEventListener("click", async () => {
     const r = await engine.exportSvg({ clip, page: plan.page, mergeMode, textAsPaths, reuseShapes: false });
     const blob = new Blob([r.svg as BlobPart], { type: "image/svg+xml" });
     const size = blob.size;
-    void busyWindow.end(); // before a "Save as" dialog can open
+    void busyWindow.end();
 
     note(
       `SVG: ${de(size / MB, 2)} MB · ${r.elements.toLocaleString("de-DE")} Elemente ` +
@@ -497,7 +500,7 @@ exportButton.addEventListener("click", async () => {
     resultImg.src = URL.createObjectURL(blob);
     resultImg.hidden = false;
 
-    await saveFile(blob, `${exportBase(plan.name, plan.page, plan.pages.length)}.svg`, "SVG-Grafik", "image/svg+xml", ".svg");
+    await save(blob);
   } catch (e) {
     void busyWindow.end();
     status.textContent = `SVG-Export fehlgeschlagen: ${String(e)}`;
@@ -511,6 +514,9 @@ exportButton.addEventListener("click", async () => {
 pdfButton.addEventListener("click", async () => {
   if (!plan) return;
   if (tilesPanel.settings.enabled) return exportTiles();
+  // Ask where to save first: the dialog needs the click, which a long export outlasts.
+  const save = await chooseSaveTarget(`${exportBase(plan.name, plan.page, plan.pages.length)}.pdf`, "PDF-Dokument", "application/pdf", ".pdf");
+  if (!save) return; // cancelled
   busy = true;
   updateButtons();
   status.replaceChildren();
@@ -518,7 +524,7 @@ pdfButton.addEventListener("click", async () => {
   try {
     const r = await engine.exportPdf({ clip, page: plan.page, sourceName: sourceLabel(plan.fileName, plan.page, plan.pages.length) });
     const blob = new Blob([r.pdf as BlobPart], { type: "application/pdf" });
-    void busyWindow.end(); // before a "Save as" dialog can open
+    void busyWindow.end();
     note(`PDF: ${de(blob.size / MB, 2)} MB · ${de(r.seconds)} s · Inhalte außerhalb des Ausschnitts entfernt`);
     if (!r.normalised)
       note(
@@ -527,7 +533,7 @@ pdfButton.addEventListener("click", async () => {
         "warn",
       );
     $("result-img").hidden = true;
-    await saveFile(blob, `${exportBase(plan.name, plan.page, plan.pages.length)}.pdf`, "PDF-Dokument", "application/pdf", ".pdf");
+    await save(blob);
   } catch (e) {
     void busyWindow.end();
     status.textContent = `PDF-Export fehlgeschlagen: ${String(e)}`;

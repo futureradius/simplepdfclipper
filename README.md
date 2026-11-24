@@ -22,7 +22,8 @@ double-click. No server, no upload, no installation.
    minimap in the bottom-right corner moves the view (keys: `1` whole Plan, `2` Plan
    width, `3` 1:1, `F` Clip).
 5. Export as SVG (for the whiteboard tool) or as PDF (for documentation; everything outside the
-   Clip is removed from the file).
+   Clip is removed from the file). The "Save as" dialog opens first, then the export is
+   computed.
 6. To print a large Clip at real size, switch on "Auf Blätter aufteilen": the Clip is cut
    into Tiles by paper format (A4–A0 or custom) or freely (columns/rows by count or by
    length), each on its own Sheet with a Margin, cut marks and a label. Saved as numbered

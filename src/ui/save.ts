@@ -22,18 +22,27 @@ type ShowDirectoryPicker = (options: { id?: string; mode: "readwrite" }) => Prom
 
 const isAbort = (e: unknown) => e instanceof DOMException && e.name === "AbortError";
 
+let lastDownloadUrl: string | undefined;
+
+/**
+ * Starts a download. The blob URL stays valid until the next download: with the
+ * browser set to ask where to save, it is read only once the user confirms that
+ * dialog, and revoking it earlier (it used to be after 10 s) saved 0 KB (#27).
+ */
 export function download(blob: Blob, name: string): void {
+  if (lastDownloadUrl) URL.revokeObjectURL(lastDownloadUrl);
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
+  a.href = lastDownloadUrl = URL.createObjectURL(blob);
   a.download = name;
   a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
 }
 
 /**
- * Asks where to save *now* (the dialog needs the click that started the export),
- * and returns a function that writes the file there later. Resolves to null if
- * the user cancelled; falls back to a download if no dialog is available.
+ * Asks where to save *now*, and returns a function that writes the file there later.
+ * Call it before any long work: the dialog needs the click that started the export,
+ * and the browser allows that for about 5 s only, after which this would silently
+ * fall back to a download (#27). Resolves to null if the user cancelled; falls back
+ * to a download if no dialog is available.
  */
 export async function chooseSaveTarget(suggestedName: string, description: string, mime: string, ext: string): Promise<((blob: Blob) => Promise<void>) | null> {
   const picker = (window as unknown as { showSaveFilePicker?: ShowSaveFilePicker }).showSaveFilePicker;
