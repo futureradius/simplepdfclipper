@@ -46,11 +46,20 @@ export interface ClipMm {
 export interface CollectOptions {
   clip: ClipMm;
   textAsPaths: boolean;
+  /**
+   * For one Region of a stitched Clip (ADR 0016): where the Region's top-left corner
+   * sits in the export (mm), the export's size, a prefix that keeps its clip and pattern
+   * ids apart from the other Regions', and a clip to the Region for whatever reaches
+   * past its edge (glyphs kept whole, image pixels).
+   */
+  region?: { at: { x: number; y: number }; size: { width: number; height: number }; idPrefix: string };
   /** Original font family -> installed substitute (font dialog). */
   fontSubstitutions?: Record<string, string>;
 }
 
 const PT_TO_UNITS = (25.4 / 72) * UNITS_PER_MM;
+/** Text bounds come from font boxes; this much slack (2 mm) keeps the glyph-centre rule in charge at the edge. */
+const TEXT_SLACK = 2 * UNITS_PER_MM;
 /** PDF line width 0 means "thinnest visible line"; SVG would hide it. */
 const HAIRLINE = 0.05 * UNITS_PER_MM;
 const CAPS = ["butt", "round", "square", "round"] as const; // Triangle -> round
@@ -164,12 +173,27 @@ function glyphBox(g: Glyph): Rect {
   return transformRect(g.m, { x0: 0, y0: -0.25, x1: Math.max(g.adv, 0.3), y1: 0.85 });
 }
 
-export function collect(mupdf: typeof MuPDF, page: MuPDF.Page, opts: CollectOptions): Collected {
+/** The callbacks a JS device takes (MuPDF.js does not export the type; first constructor overload). */
+type DeviceFunctions = typeof MuPDF.Device extends { new (callbacks: infer C): unknown; new (pointer: never): unknown } ? C : never;
+
+interface Collector {
+  /** The callbacks of a MuPDF device that records into this collector. */
+  device: DeviceFunctions;
+  /** The page transformation the device expects (page space -> export units). */
+  pageToUnits: Matrix;
+  /** Ends collecting and returns what was recorded. */
+  finish(): Collected;
+}
+
+function collector(mupdf: typeof MuPDF, page: MuPDF.Page, opts: CollectOptions): Collector {
   const [bx0, by0] = page.getBounds();
-  const { clip } = opts;
-  const width = Math.round(clip.width * UNITS_PER_MM);
-  const height = Math.round(clip.height * UNITS_PER_MM);
-  const area: Rect = { x0: 0, y0: 0, x1: width, y1: height };
+  const { clip, region } = opts;
+  const ox = region ? Math.round(region.at.x * UNITS_PER_MM) : 0;
+  const oy = region ? Math.round(region.at.y * UNITS_PER_MM) : 0;
+  const area: Rect = { x0: ox, y0: oy, x1: ox + Math.round(clip.width * UNITS_PER_MM), y1: oy + Math.round(clip.height * UNITS_PER_MM) };
+  const width = region ? Math.round(region.size.width * UNITS_PER_MM) : area.x1;
+  const height = region ? Math.round(region.size.height * UNITS_PER_MM) : area.y1;
+  const prefix = region?.idPrefix ?? "";
   /** Paths are cut at the area (ADR 0005, #35). */
   const areaPlanes: HalfPlane[] = rectHalfPlanes(area);
   const pageToUnits: Matrix = [
@@ -177,8 +201,8 @@ export function collect(mupdf: typeof MuPDF, page: MuPDF.Page, opts: CollectOpti
     0,
     0,
     PT_TO_UNITS,
-    -(bx0 * PT_TO_UNITS) - clip.x * UNITS_PER_MM,
-    -(by0 * PT_TO_UNITS) - clip.y * UNITS_PER_MM,
+    -(bx0 * PT_TO_UNITS) - clip.x * UNITS_PER_MM + ox,
+    -(by0 * PT_TO_UNITS) - clip.y * UNITS_PER_MM + oy,
   ];
 
   const items: Item[] = [];
@@ -203,7 +227,7 @@ export function collect(mupdf: typeof MuPDF, page: MuPDF.Page, opts: CollectOpti
   const clipId = (key: string, def: ClipDef) => {
     let id = clipIds.get(key);
     if (!id) {
-      id = "c" + (clipIds.size + 1);
+      id = prefix + "c" + (clipIds.size + 1);
       clipIds.set(key, id);
       clips.set(id, def);
     }
@@ -245,14 +269,38 @@ export function collect(mupdf: typeof MuPDF, page: MuPDF.Page, opts: CollectOpti
     clipStack.push({ rect: intersect(t.rect, bbox), id: clipId(key, def), exact: false });
   };
 
+  /**
+   * In a stitched Clip, whatever reaches past the Region's edge (a glyph kept whole, the
+   * last image pixels) must not show in its neighbour: such items get this clip. Alone,
+   * the SVG's own edge does that.
+   */
+  let areaClip: string | null = null;
+  const edgeClip = (bbox: Rect): string | null => {
+    if (!region || contains(area, bbox)) return null;
+    areaClip ??= clipId("area", { rect: area, d: null, evenOdd: false, parent: null });
+    return areaClip;
+  };
+
   /** Clip id an item with this bbox needs, or undefined if it is invisible. */
   const clipFor = (bbox: Rect): string | null | undefined => {
     if (recording) return null; // tile content: positioned in pattern space, never culled
     const t = top();
     if (isEmpty(t.rect) || !meets(bbox, t.rect)) return undefined;
-    if (t.id === null) return null;
-    if (t.exact && contains(t.rect, intersect(bbox, area))) return null;
+    if (t.id === null) return edgeClip(bbox);
+    if (t.exact && contains(t.rect, intersect(bbox, area))) return edgeClip(bbox);
     return t.id;
+  };
+
+  /**
+   * True if a path cannot show: MuPDF's bounds (stroke included) miss the visible area.
+   * Checked before the path is walked point by point in JS, which is what most of an
+   * export's time goes into: most of a Plan is outside the Clip.
+   */
+  const missed = (shape: MuPDF.Path | MuPDF.Text, stroke: MuPDF.StrokeState | null, ctm: Matrix, slack = 1): boolean => {
+    if (recording) return false; // tile content: positioned in pattern space
+    const [x0, y0, x1, y1] = shape.getBounds(stroke as MuPDF.StrokeState, ctm);
+    const t = top().rect;
+    return isEmpty(t) || x1! < t.x0 - slack || x0! > t.x1 + slack || y1! < t.y0 - slack || y0! > t.y1 + slack;
   };
 
   const fontCache = new Map<number, FontStyle>();
@@ -271,7 +319,7 @@ export function collect(mupdf: typeof MuPDF, page: MuPDF.Page, opts: CollectOpti
   const outlines = opts.textAsPaths ? new GlyphOutlines(mupdf) : null;
 
   const addText = (text: MuPDF.Text, ctm: Matrix, cs: MuPDF.ColorSpace, color: number[], alpha: number) => {
-    if (suppress) return;
+    if (suppress || missed(text, null, ctm, TEXT_SLACK)) return;
     const fill = colorToHex(cs, color);
     let run: Glyph[] = [];
     const flush = () => {
@@ -302,7 +350,7 @@ export function collect(mupdf: typeof MuPDF, page: MuPDF.Page, opts: CollectOpti
   const glyphBoxes = new GlyphBoxes(mupdf);
   const centreInside = (font: MuPDF.Font, trm: Matrix, gid: number, wmode: number, ctm: Matrix) => {
     const [x, y] = glyphBoxes.get(font, trm, gid, wmode, ctm).centre;
-    return x >= 0 && x <= width && y >= 0 && y <= height;
+    return x >= area.x0 && x <= area.x1 && y >= area.y0 && y <= area.y1;
   };
 
   /** Does glyph g directly follow glyph p on the same baseline? */
@@ -394,9 +442,9 @@ export function collect(mupdf: typeof MuPDF, page: MuPDF.Page, opts: CollectOpti
     });
   };
 
-  const dev = new mupdf.Device({
+  const device: DeviceFunctions = {
     fillPath(path, evenOdd, ctm, cs, color, alpha) {
-      if (suppress) return;
+      if (suppress || missed(path, null, ctm as Matrix)) return;
       let { d, bbox } = walkPath(path, ctm as Matrix);
       if (isEmpty(bbox)) return;
       if (!recording) {
@@ -413,7 +461,7 @@ export function collect(mupdf: typeof MuPDF, page: MuPDF.Page, opts: CollectOpti
       sink.push({ kind: "path", d, fill: colorToHex(cs, color), evenOdd, stroke: null, strokeStyle: null, alpha, bbox, clip: clipId });
     },
     strokePath(path, stroke, ctm, cs, color, alpha) {
-      if (suppress) return;
+      if (suppress || missed(path, stroke, ctm as Matrix)) return;
       const { d, bbox: raw } = walkPath(path, ctm as Matrix);
       if (isEmpty(raw)) return;
       const style = strokeStyleOf(stroke, ctm as Matrix);
@@ -535,7 +583,7 @@ export function collect(mupdf: typeof MuPDF, page: MuPDF.Page, opts: CollectOpti
       let record = false;
       if (!pid) {
         const base = contentKey ? patternIds.get(contentKey) : undefined;
-        pid = "p" + (patterns.length + 1);
+        pid = prefix + "p" + (patterns.length + 1);
         patterns.push({ id: pid, base: base ?? null, xstep, ystep, view: rectOf(viewIn), matrix: m, items: [] });
         if (fullKey) patternIds.set(fullKey, pid);
         if (contentKey && !base) patternIds.set(contentKey, pid);
@@ -573,16 +621,84 @@ export function collect(mupdf: typeof MuPDF, page: MuPDF.Page, opts: CollectOpti
         suppress--;
       }
     },
-  });
+  };
 
+  return {
+    device,
+    pageToUnits,
+    finish() {
+      outlines?.destroy();
+      return { items, clips, patterns, width, height, unsupported };
+    },
+  };
+}
+
+/** Runs the Plan's page through the collector for `opts`. */
+export function collect(mupdf: typeof MuPDF, page: MuPDF.Page, opts: CollectOptions): Collected {
+  const c = collector(mupdf, page, opts);
+  const dev = new mupdf.Device(c.device);
   try {
-    page.run(dev, pageToUnits);
+    page.run(dev, c.pageToUnits);
     dev.close();
   } finally {
     dev.destroy();
-    outlines?.destroy();
   }
-  return { items, clips, patterns, width, height, unsupported };
+  return c.finish();
+}
+
+/** Where each device callback gets its transformation (argument index). */
+const CTM_ARG: Partial<Record<keyof DeviceFunctions, number>> = {
+  fillPath: 2,
+  strokePath: 2,
+  clipPath: 2,
+  clipStrokePath: 2,
+  fillText: 1,
+  strokeText: 2,
+  clipText: 1,
+  clipStrokeText: 2,
+  ignoreText: 1,
+  fillShade: 1,
+  fillImage: 1,
+  fillImageMask: 1,
+  clipImageMask: 1,
+  beginTile: 4,
+};
+
+/**
+ * Collects several Regions of a stitched Clip (ADR 0016) in one pass over the page:
+ * parsing the page and handing every drawing call to JS is most of an export's time, so
+ * each call is shared by all Regions, shifted to each Region's place in the Clip.
+ */
+export function collectAll(mupdf: typeof MuPDF, page: MuPDF.Page, all: CollectOptions[]): Collected[] {
+  const cs = all.map((o) => collector(mupdf, page, o));
+  if (cs.length === 0) return [];
+  const [bx0, by0] = page.getBounds();
+  const base: Matrix = [PT_TO_UNITS, 0, 0, PT_TO_UNITS, -bx0! * PT_TO_UNITS, -by0! * PT_TO_UNITS];
+  const shift = cs.map((c): Matrix => [1, 0, 0, 1, c.pageToUnits[4] - base[4], c.pageToUnits[5] - base[5]]);
+  const fan: Record<string, (...args: unknown[]) => unknown> = {};
+  for (const name of Object.keys(cs[0]!.device) as (keyof DeviceFunctions)[]) {
+    const at = CTM_ARG[name];
+    fan[name] = (...args: unknown[]) => {
+      let result = 1;
+      cs.forEach((c, i) => {
+        const a = [...args];
+        if (at !== undefined) a[at] = concat(args[at] as Matrix, shift[i]!);
+        const r = (c.device[name] as (...x: unknown[]) => unknown)(...a);
+        // beginTile: 1 = skip the tile's content. Run it if any Region records it; the
+        // others ignore it (they suppress until endTile).
+        if (name === "beginTile" && r === 0) result = 0;
+      });
+      return name === "beginTile" ? result : undefined;
+    };
+  }
+  const dev = new mupdf.Device(fan as DeviceFunctions);
+  try {
+    page.run(dev, base);
+    dev.close();
+  } finally {
+    dev.destroy();
+  }
+  return cs.map((c) => c.finish());
 }
 
 const isWhitespace = (u: number) => u === 32 || u === 9 || u === 0xa0 || (u >= 0x2000 && u <= 0x200b) || u === 0x3000;

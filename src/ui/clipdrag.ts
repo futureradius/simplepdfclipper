@@ -40,6 +40,29 @@ export function hitTest(c: ClipMm, p: Point, tol: number): Handle {
   return "move";
 }
 
+/**
+ * What a left press at `p` grabs (ADR 0012): the selected Region's edges, corners or
+ * inside first, then the inside of another Region (the one drawn on top, i.e. the last
+ * in the list, first); undefined on empty Plan, where a drag draws a new Region.
+ */
+export function regionAt(
+  regions: readonly ClipMm[],
+  selected: number | undefined,
+  p: Point,
+  tol: number,
+): { index: number; handle: Handle } | undefined {
+  const sel = selected === undefined ? undefined : regions[selected];
+  if (sel) {
+    const h = hitTest(sel, p, tol);
+    if (h !== "new") return { index: selected!, handle: h };
+  }
+  for (let i = regions.length - 1; i >= 0; i--) {
+    const c = regions[i]!;
+    if (p.x >= c.x && p.x <= c.x + c.width && p.y >= c.y && p.y <= c.y + c.height) return { index: i, handle: "move" };
+  }
+  return undefined;
+}
+
 /** The Clip after dragging `handle` from `from` to `to`, kept inside the Plan. */
 export function dragClip(start: ClipMm, handle: Handle, from: Point, to: Point, plan: { width: number; height: number }): ClipMm {
   const dx = to.x - from.x;

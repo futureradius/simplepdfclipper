@@ -1,12 +1,16 @@
-// Precision view (ADR 0003): zoomable, pannable view of the Plan with the Clip
-// and its handles on top.
+// Precision view (ADR 0003): zoomable, pannable view of the Plan with the Regions of
+// the Clip on top, the selected one with handles (ADR 0016).
+//
+// Mouse (ADR 0012): the left button selects and edits (drag on empty Plan: new Region,
+// click there: deselect, click on a Region: select, edges: resize, inside: move); right
+// drag, middle drag and Space + left drag pan; the wheel zooms.
 //
 // Rendering works like a map: while zooming/panning, already available images
 // are scaled (the overview as a base layer, plus recent sharp renders); once the
 // view rests, the visible area is rendered sharp in one pass by the engine.
 
 import type { ClipMm } from "../export/index";
-import { hitTest, type Handle, type Point } from "./clipdrag";
+import { regionAt, type Handle, type Point } from "./clipdrag";
 import type { Guide } from "./snap";
 
 /** Tile grid preview (ADR 0013): cut positions in mm from the Plan origin, and Tile names. */
@@ -35,8 +39,24 @@ interface Layer {
 export interface ViewerCallbacks {
   /** Render part of the Plan; resolves to an image covering exactly `rect`. */
   render(rect: ViewRect, pxPerMm: number): Promise<ImageBitmap>;
-  /** A handle of the Clip is being dragged. Returns snap guides to show. */
-  dragClip(handle: Handle, start: ClipMm, from: Point, to: Point, altKey: boolean, visible: ViewRect, tolMm: number): Guide[];
+  /**
+   * Region `index` is being dragged by `handle` (edges resize, "move" moves), or a new
+   * Region is being drawn (`index` undefined, handle "new"). Returns snap guides to show.
+   */
+  dragRegion(
+    index: number | undefined,
+    handle: Handle,
+    start: ClipMm | undefined,
+    from: Point,
+    to: Point,
+    altKey: boolean,
+    visible: ViewRect,
+    tolMm: number,
+  ): Guide[];
+  /** The drag that changed a Region is over. */
+  dragEnd(): void;
+  /** A Region was clicked (its index) or empty Plan (undefined). */
+  select(index: number | undefined): void;
   /** The visible area changed (to update the overview). */
   viewChanged(visible: ViewRect, zoomPercent: number): void;
 }
@@ -46,6 +66,8 @@ export const PX_PER_MM_100 = 96 / 25.4;
 const MIN_ZOOM = 0.02;
 const MAX_ZOOM = 64;
 const GRAB_PX = 8;
+/** A press that moves less than this (CSS px) is a click, not a drag. */
+const CLICK_PX = 4;
 const RENDER_DELAY_MS = 120;
 const MAX_RENDER_PIXELS = 16_000_000;
 const KEEP_LAYERS = 4;
@@ -54,6 +76,7 @@ const COLORS = {
   background: "#e9e9ec",
   outside: "rgba(30, 30, 40, 0.28)",
   clip: "#2563eb",
+  other: "rgba(37, 99, 235, 0.55)",
   guide: "#f59e0b",
 };
 
@@ -62,8 +85,14 @@ export class Viewer {
   private plan = { width: 1, height: 1 };
   private base: Layer | undefined;
   private layers: Layer[] = [];
-  private clip: ClipMm = { x: 0, y: 0, width: 0, height: 0 };
+  /** The Regions on the Plan, in list order; `selected` has the handles. */
+  private regions: ClipMm[] = [];
+  private selected: number | undefined;
   private guides: Guide[] = [];
+  /** Space is held: a left drag pans (touchpads). */
+  private space = false;
+  /** Scratch canvas for dimming everything outside the Regions. */
+  private dim = document.createElement("canvas");
   private tiles: TileOverlay | undefined;
   /** View: mm at the canvas centre, CSS px per mm. */
   private cx = 0;
@@ -72,7 +101,20 @@ export class Viewer {
   private cssW = 1;
   private cssH = 1;
   private dpr = 1;
-  private drag: { mode: "pan" | Handle; from: Point; screen: Point; start: ClipMm; cx: number; cy: number } | undefined;
+  private drag:
+    | {
+        mode: "pan" | Handle;
+        /** The Region dragged; undefined for "new" and "pan". */
+        index: number | undefined;
+        from: Point;
+        screen: Point;
+        start: ClipMm | undefined;
+        cx: number;
+        cy: number;
+        /** Not moved far enough yet to count as a drag. */
+        pending: boolean;
+      }
+    | undefined;
   private renderTimer: ReturnType<typeof setTimeout> | undefined;
   private rendering = false;
   private renderAgain = false;
@@ -89,6 +131,7 @@ export class Viewer {
     canvas.addEventListener("pointermove", (e) => this.onMove(e));
     canvas.addEventListener("pointerup", (e) => this.onUp(e));
     canvas.addEventListener("pointercancel", (e) => this.onUp(e));
+    canvas.addEventListener("contextmenu", (e) => e.preventDefault()); // the right button pans
     this.resize();
   }
 
@@ -102,10 +145,18 @@ export class Viewer {
     this.base = { bitmap: overview, rect: { x0: 0, y0: 0, x1: widthMm, y1: heightMm }, pxPerMm: overview.width / widthMm };
   }
 
-  setClip(c: ClipMm, guides: Guide[] = []): void {
-    this.clip = c;
+  setRegions(regions: ClipMm[], selected: number | undefined, guides: Guide[] = []): void {
+    this.regions = regions;
+    this.selected = selected;
     this.guides = guides;
     this.requestDraw();
+  }
+
+  /** Space held or released: while held, a left drag pans. */
+  setSpace(down: boolean): void {
+    if (this.space === down) return;
+    this.space = down;
+    if (!this.drag) this.canvas.style.cursor = down ? "grab" : "";
   }
 
   setTiles(t: TileOverlay | undefined): void {
@@ -113,10 +164,16 @@ export class Viewer {
     this.requestDraw();
   }
 
-  /** Show the whole Clip with a small margin. */
+  /** Show the selected Region, or all Regions if none is selected, with a small margin. */
   fitClip(): void {
-    const c = this.clip;
-    this.fitRect({ x0: c.x, y0: c.y, x1: c.x + c.width, y1: c.y + c.height });
+    const shown = this.selected !== undefined ? [this.regions[this.selected]!] : this.regions;
+    if (shown.length === 0) return;
+    this.fitRect({
+      x0: Math.min(...shown.map((c) => c.x)),
+      y0: Math.min(...shown.map((c) => c.y)),
+      x1: Math.max(...shown.map((c) => c.x + c.width)),
+      y1: Math.max(...shown.map((c) => c.y + c.height)),
+    });
   }
 
   fitRect(r: ViewRect, margin = 0.08): void {
@@ -201,54 +258,63 @@ export class Viewer {
     this.zoomAt(p.x, p.y, Math.exp(-e.deltaY * lines * 0.0015));
   }
 
-  private handleAt(s: Point): Handle {
-    if (this.clip.width <= 0) return "new";
-    return hitTest(this.clip, this.toMm(s.x, s.y), GRAB_PX / this.zoom);
+  /** What a left press at screen point `s` grabs (see regionAt). */
+  private targetAt(s: Point): { index: number; handle: Handle } | undefined {
+    return regionAt(this.regions, this.selected, this.toMm(s.x, s.y), GRAB_PX / this.zoom);
   }
 
   private onDown(e: PointerEvent): void {
-    if (e.button !== 0 && e.button !== 1) return;
+    if (e.button !== 0 && e.button !== 1 && e.button !== 2) return;
     const s = this.local(e);
-    const h = e.button === 1 ? "new" : this.handleAt(s);
-    // Edges and corners resize; anywhere else (also inside the Clip) pans the view.
-    const mode = h === "move" || h === "new" ? "pan" : h;
-    this.drag = { mode, from: this.toMm(s.x, s.y), screen: s, start: { ...this.clip }, cx: this.cx, cy: this.cy };
+    const base = { from: this.toMm(s.x, s.y), screen: s, cx: this.cx, cy: this.cy, start: undefined, index: undefined };
+    if (e.button !== 0 || this.space) {
+      this.drag = { ...base, mode: "pan", pending: false };
+      this.canvas.style.cursor = "grabbing";
+    } else {
+      const t = this.targetAt(s);
+      if (t && t.index !== this.selected) this.cb.select(t.index);
+      this.drag = t
+        ? { ...base, mode: t.handle, index: t.index, start: { ...this.regions[t.index]! }, pending: true }
+        : { ...base, mode: "new", pending: true };
+    }
     this.canvas.setPointerCapture(e.pointerId);
-    this.canvas.style.cursor = mode === "pan" ? "grabbing" : this.canvas.style.cursor;
     e.preventDefault();
   }
 
   private onMove(e: PointerEvent): void {
     const s = this.local(e);
-    if (!this.drag) {
-      const h = this.handleAt(s);
-      this.canvas.style.cursor = h === "move" || h === "new" ? "grab" : CURSOR[h];
+    const d = this.drag;
+    if (!d) {
+      const t = this.space ? undefined : this.targetAt(s);
+      this.canvas.style.cursor = this.space ? "grab" : t ? CURSOR[t.handle] : "crosshair";
       return;
     }
-    if (this.drag.mode === "pan") {
-      this.cx = this.drag.cx - (s.x - this.drag.screen.x) / this.zoom;
-      this.cy = this.drag.cy - (s.y - this.drag.screen.y) / this.zoom;
+    if (d.mode === "pan") {
+      this.cx = d.cx - (s.x - d.screen.x) / this.zoom;
+      this.cy = d.cy - (s.y - d.screen.y) / this.zoom;
       this.viewUpdated();
       return;
     }
-    const guides = this.cb.dragClip(
-      this.drag.mode,
-      this.drag.start,
-      this.drag.from,
-      this.toMm(s.x, s.y),
-      e.altKey,
-      this.visible(),
-      GRAB_PX / this.zoom,
-    );
+    if (d.pending) {
+      if (Math.hypot(s.x - d.screen.x, s.y - d.screen.y) < CLICK_PX) return;
+      d.pending = false;
+    }
+    const guides = this.cb.dragRegion(d.index, d.mode, d.start, d.from, this.toMm(s.x, s.y), e.altKey, this.visible(), GRAB_PX / this.zoom);
     this.guides = guides;
     this.requestDraw();
   }
 
   private onUp(e: PointerEvent): void {
-    if (!this.drag) return;
+    const d = this.drag;
+    if (!d) return;
     this.drag = undefined;
     this.guides = [];
     this.canvas.releasePointerCapture(e.pointerId);
+    if (d.mode !== "pan") {
+      // A click on empty Plan deselects; a click on a Region has already selected it.
+      if (d.pending && d.mode === "new") this.cb.select(undefined);
+      else if (!d.pending) this.cb.dragEnd();
+    }
     this.onMove(e);
     this.requestDraw();
   }
@@ -361,7 +427,7 @@ export class Viewer {
     for (const layer of [this.base, ...[...this.layers].sort((a, b) => a.pxPerMm - b.pxPerMm)]) this.drawLayer(layer, vis);
 
     this.drawTiles();
-    this.drawClip();
+    this.drawRegions();
     this.drawGuides();
   }
 
@@ -376,29 +442,66 @@ export class Viewer {
     this.ctx.drawImage(l.bitmap, sx, sy, sw, sh, d.x, d.y, (part.x1 - part.x0) * this.zoom, (part.y1 - part.y0) * this.zoom);
   }
 
-  private drawClip(): void {
-    const c = this.clip;
-    if (c.width <= 0 || c.height <= 0) return;
+  private drawRegions(): void {
     const { ctx } = this;
-    const a = this.toScreen(c.x, c.y);
-    const w = c.width * this.zoom;
-    const h = c.height * this.zoom;
-    // Dim everything outside the Clip.
-    ctx.fillStyle = COLORS.outside;
-    ctx.beginPath();
-    ctx.rect(0, 0, this.cssW, this.cssH);
-    ctx.rect(a.x, a.y, w, h);
-    ctx.fill("evenodd");
-    ctx.strokeStyle = COLORS.clip;
-    ctx.lineWidth = 2;
-    ctx.strokeRect(a.x, a.y, w, h);
-    ctx.fillStyle = "#fff";
-    for (const [fx, fy] of HANDLE_POSITIONS) {
-      const x = a.x + fx * w;
-      const y = a.y + fy * h;
-      ctx.fillRect(x - 5, y - 5, 10, 10);
-      ctx.strokeRect(x - 5, y - 5, 10, 10);
+    const boxes = this.regions.map((c) => {
+      const a = this.toScreen(c.x, c.y);
+      return { x: a.x, y: a.y, w: c.width * this.zoom, h: c.height * this.zoom };
+    });
+    // Dim everything outside the Regions (they may overlap, so they are cut out of a layer).
+    const dim = this.dim;
+    if (dim.width !== this.canvas.width || dim.height !== this.canvas.height) {
+      dim.width = this.canvas.width;
+      dim.height = this.canvas.height;
     }
+    const dc = dim.getContext("2d")!;
+    dc.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    dc.clearRect(0, 0, this.cssW, this.cssH);
+    dc.fillStyle = COLORS.outside;
+    dc.fillRect(0, 0, this.cssW, this.cssH);
+    for (const b of boxes) dc.clearRect(b.x, b.y, b.w, b.h);
+    ctx.drawImage(dim, 0, 0, this.cssW, this.cssH);
+
+    // The others lighter, the selected one last (on top) with its handles; numbered if several.
+    const order = boxes.map((_, i) => i).filter((i) => i !== this.selected);
+    if (this.selected !== undefined && boxes[this.selected]) order.push(this.selected);
+    for (const i of order) {
+      const b = boxes[i]!;
+      const sel = i === this.selected;
+      ctx.strokeStyle = sel ? COLORS.clip : COLORS.other;
+      ctx.lineWidth = sel ? 2 : 1.5;
+      ctx.strokeRect(b.x, b.y, b.w, b.h);
+      if (sel) {
+        ctx.fillStyle = "#fff";
+        for (const [fx, fy] of HANDLE_POSITIONS) {
+          const x = b.x + fx * b.w;
+          const y = b.y + fy * b.h;
+          ctx.fillRect(x - 5, y - 5, 10, 10);
+          ctx.strokeRect(x - 5, y - 5, 10, 10);
+        }
+      }
+      if (this.regions.length > 1) this.drawNumber(i + 1, b, sel);
+    }
+  }
+
+  /** The Region's number in a small tag in its top-left corner (if it is big enough on screen). */
+  private drawNumber(n: number, b: { x: number; y: number; w: number; h: number }, selected: boolean): void {
+    if (b.w < 28 || b.h < 22) return;
+    const { ctx } = this;
+    ctx.save();
+    ctx.font = '600 12px "Segoe UI", system-ui, sans-serif';
+    ctx.textBaseline = "middle";
+    const label = String(n);
+    const w = ctx.measureText(label).width + 10;
+    const x = Math.max(b.x, 0) + 8;
+    const y = Math.max(b.y, 0) + 8;
+    ctx.fillStyle = selected ? COLORS.clip : COLORS.other;
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, 18, 9);
+    ctx.fill();
+    ctx.fillStyle = "#fff";
+    ctx.fillText(label, x + 5, y + 9.5);
+    ctx.restore();
   }
 
   /** Dashed cut lines inside the Clip, Tile names where there is room. */
@@ -484,8 +587,8 @@ const CURSOR: Record<Handle, string> = {
   sw: "nesw-resize",
   nw: "nwse-resize",
   se: "nwse-resize",
-  move: "grab",
-  new: "grab",
+  move: "move",
+  new: "crosshair",
 };
 
 const HANDLE_POSITIONS: [number, number][] = [

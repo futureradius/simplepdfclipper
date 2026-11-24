@@ -28,3 +28,7 @@ touching), instead of being ignored. The same applies when a Clip preset is load
 until it is closed or a Region is edited. A Plan of the same size restores exactly.
 A schedule that grew at one end shifts Regions in the middle slightly; the user
 corrects them. Accepted.
+
+Since #36 all Regions with their Layout are remembered (in mm, key
+`simplepdfclipper.lastRegions`); until #38 they are still ignored on a Plan they do not
+fit.

@@ -7,12 +7,14 @@
 // Tiles are produced one call at a time so the UI can show progress and cancel.
 
 import type * as MuPDF from "mupdf";
-import type { ClipMm } from "./collect";
 import { exportPdf } from "./pdf";
+import { asRegions, clipSize, type ClipShape } from "./regions";
+import { describeRegions, exportClipPdf } from "./stitchpdf";
 import { rowName, type Tile } from "./tilegrid";
 
 export interface TiledJob {
-  clip: ClipMm;
+  /** The Clip: a rectangle, or Regions with their Layout (stitched first, ADR 0016). */
+  clip: ClipShape;
   /** Page of the Document (0-based). */
   page: number;
   sourceName: string;
@@ -43,7 +45,7 @@ export class TiledPdfExport {
     planBytes: Uint8Array,
     private readonly job: TiledJob,
   ) {
-    const clip = exportPdf(mupdf, planBytes, { clip: job.clip, page: job.page, sourceName: job.sourceName, date: job.date });
+    const clip = exportClipPdf(mupdf, planBytes, { clip: job.clip, page: job.page, sourceName: job.sourceName, date: job.date });
     this.clipBytes = clip.pdf;
     this.uncut = clip.uncut;
     this.book = job.multipage ? new mupdf.PDFDocument() : undefined;
@@ -54,6 +56,12 @@ export class TiledPdfExport {
     const { job } = this;
     const day = job.date.toLocaleDateString("de-DE");
     const where = `Zeile ${rowName(t.row)} von ${rowName(job.rows - 1)}, Spalte ${t.column + 1} von ${job.columns}`;
+    const regions = asRegions(job.clip);
+    // One Region: where the Tile is on the Plan; several: where it is in the stitched Clip.
+    const pos =
+      regions.length === 1
+        ? `links ${mm(regions[0]!.x + t.x)} mm, oben ${mm(regions[0]!.y + t.y)} mm`
+        : `im Ausschnitt aus ${regions.length} Bereichen links ${mm(t.x)} mm, oben ${mm(t.y)} mm`;
     const r = exportPdf(this.mupdf, this.clipBytes, {
       clip: { x: t.x, y: t.y, width: t.width, height: t.height },
       sourceName: job.sourceName,
@@ -61,7 +69,7 @@ export class TiledPdfExport {
       sheet: { widthMm: t.sheetWidth, heightMm: t.sheetHeight, marginMm: job.marginMm, label: tileLabel(t, job), shortLabel: t.name },
       title: `${job.sourceName} – Kachel ${t.name}`,
       subject:
-        `Kachel ${t.name} (${where}) aus ${job.sourceName}: links ${mm(job.clip.x + t.x)} mm, oben ${mm(job.clip.y + t.y)} mm, ` +
+        `Kachel ${t.name} (${where}) aus ${job.sourceName}: ${pos}, ` +
         `${mm(t.width)} × ${mm(t.height)} mm. Exportiert am ${day}. Inhalte außerhalb der Kachel wurden entfernt.`,
     });
     this.uncut += r.uncut;
@@ -86,12 +94,18 @@ export class TiledPdfExport {
   finish(): Uint8Array | undefined {
     const { book, job } = this;
     if (!book) return undefined;
-    const c = job.clip;
+    const regions = asRegions(job.clip);
+    const c = regions[0]!;
+    const size = clipSize(regions);
+    const clipText =
+      regions.length === 1
+        ? `Ausschnitt links ${mm(c.x)} mm, oben ${mm(c.y)} mm, ${mm(c.width)} × ${mm(c.height)} mm`
+        : `Ausschnitt aus ${regions.length} Bereichen, ${mm(size.width)} × ${mm(size.height)} mm (${describeRegions(regions)})`;
     book.setMetaData("info:Title", `${job.sourceName} – Kacheln`);
     book.setMetaData(
       "info:Subject",
       `${job.rows * job.columns} Kacheln (${job.rows} Zeilen × ${job.columns} Spalten, zeilenweise) aus ${job.sourceName}: ` +
-        `Ausschnitt links ${mm(c.x)} mm, oben ${mm(c.y)} mm, ${mm(c.width)} × ${mm(c.height)} mm. ` +
+        `${clipText}. ` +
         `Exportiert am ${job.date.toLocaleDateString("de-DE")}. Inhalte außerhalb der jeweiligen Kachel wurden entfernt.`,
     );
     book.setMetaData("info:Creator", "simplepdfclipper");

@@ -96,9 +96,12 @@ test("opens from file://, snaps the Clip in the precision view and exports an SV
   expect(Math.abs((await percent()) - wholePercent)).toBeLessThan(0.1);
   await expect(minimap).toBeHidden();
 
-  // Keyboard: Shift+ArrowRight moves the Clip by 1 mm.
+  // The clicks on empty Plan above deselected the Region (ADR 0012): its fields are off.
+  await expect(page.locator("#clip-x")).toBeDisabled();
+  await page.locator("#regions .pick").first().click();
+
+  // Keyboard: Shift+ArrowRight moves the selected Region by 1 mm.
   const xBefore = await num(page, "#clip-x");
-  await page.locator("#viewer-canvas").click({ position: { x: 5, y: 5 } });
   await page.keyboard.press("Shift+ArrowRight");
   expect(await num(page, "#clip-x")).toBeCloseTo(xBefore + 1, 5);
   await page.keyboard.press("ArrowLeft");
