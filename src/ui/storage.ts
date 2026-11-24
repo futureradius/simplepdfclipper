@@ -3,25 +3,31 @@
 // every access is guarded.
 
 import type { ClipMm } from "../export/index";
+import { readRegions, single, type Region } from "../export/regions";
 import { readPresetList, sanitizeSettings, type ExportSettings, type Preset } from "./presets";
 
-const KEY = "simplepdfclipper.lastClip";
+const KEY = "simplepdfclipper.lastRegions";
+/** Before Regions (ADR 0016) one rectangle was remembered, under this key. */
+const OLD_CLIP_KEY = "simplepdfclipper.lastClip";
 
-export function loadStoredClip(): ClipMm | undefined {
+/** The last Regions with their Layout; undefined if nothing (usable) is remembered. */
+export function loadStoredRegions(): Region[] | undefined {
   try {
     const raw = localStorage.getItem(KEY);
-    if (!raw) return undefined;
-    const c = JSON.parse(raw) as Partial<ClipMm>;
-    const ok = [c.x, c.y, c.width, c.height].every((v) => typeof v === "number" && Number.isFinite(v));
-    return ok ? (c as ClipMm) : undefined;
+    if (raw) return readRegions(JSON.parse(raw));
+    const old = localStorage.getItem(OLD_CLIP_KEY);
+    if (!old) return undefined;
+    const c = JSON.parse(old) as Partial<ClipMm>;
+    const ok = [c.x, c.y, c.width, c.height].every((v) => typeof v === "number" && Number.isFinite(v)) && c.width! > 0 && c.height! > 0;
+    return ok ? single(c as ClipMm) : undefined;
   } catch {
     return undefined;
   }
 }
 
-export function storeClip(clip: ClipMm): void {
+export function storeRegions(regions: readonly Region[]): void {
   try {
-    localStorage.setItem(KEY, JSON.stringify(clip));
+    localStorage.setItem(KEY, JSON.stringify(regions));
   } catch {
     // ignore
   }

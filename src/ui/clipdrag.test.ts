@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dragClip, hitTest, onPlan } from "./clipdrag";
+import { dragClip, hitTest, onPlan, regionAt } from "./clipdrag";
 
 const clip = { x: 100, y: 200, width: 300, height: 100 };
 const plan = { width: 1188.9, height: 14270.9 };
@@ -64,5 +64,29 @@ describe("onPlan", () => {
     expect(onPlan({ x: 0, y: 0, width: plan.width, height: plan.height }, plan)).toBe(true);
     expect(onPlan({ ...clip, y: -0.5 }, plan)).toBe(false);
     expect(onPlan({ ...clip, x: plan.width - 10 }, plan)).toBe(false);
+  });
+});
+
+describe("regionAt", () => {
+  const regions = [
+    { x: 0, y: 0, width: 100, height: 100 },
+    { x: 50, y: 50, width: 100, height: 100 },
+    { x: 300, y: 0, width: 50, height: 50 },
+  ];
+
+  it("prefers the selected Region's edges and inside", () => {
+    expect(regionAt(regions, 0, { x: 75, y: 75 }, 2)).toEqual({ index: 0, handle: "move" });
+    expect(regionAt(regions, 0, { x: 101, y: 60 }, 2)).toEqual({ index: 0, handle: "e" });
+  });
+
+  it("else takes the Region drawn on top, inside only", () => {
+    expect(regionAt(regions, undefined, { x: 75, y: 75 }, 2)).toEqual({ index: 1, handle: "move" });
+    expect(regionAt(regions, 2, { x: 75, y: 75 }, 2)).toEqual({ index: 1, handle: "move" });
+    expect(regionAt(regions, undefined, { x: 25, y: 25 }, 2)).toEqual({ index: 0, handle: "move" });
+  });
+
+  it("finds nothing on empty Plan", () => {
+    expect(regionAt(regions, 0, { x: 200, y: 20 }, 2)).toBeUndefined();
+    expect(regionAt([], undefined, { x: 1, y: 1 }, 2)).toBeUndefined();
   });
 });

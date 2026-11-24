@@ -1,6 +1,7 @@
 // The minimap (ADR 0012): the whole Plan, small, floating over the bottom-right corner
-// of the precision view. Shows the visible area (red frame), the Clip (blue box) and
-// the Tile grid (thin lines). Click or drag to move the view; no Clip editing here.
+// of the precision view. Shows the visible area (red frame), the Regions (blue boxes,
+// the selected one stronger) and the Tile grid (thin lines). Click or drag to move the
+// view; no editing here.
 
 import type { ClipMm } from "../export/collect";
 import type { Point } from "./clipdrag";
@@ -24,7 +25,8 @@ export function showsWholePlan(visible: ViewRect, planW: number, planH: number):
 export interface MinimapElements {
   root: HTMLElement;
   canvas: HTMLCanvasElement;
-  clipBox: HTMLElement;
+  /** Holds one box per Region. */
+  regions: HTMLElement;
   viewBox: HTMLElement;
   tileGrid: SVGSVGElement;
   collapse: HTMLButtonElement;
@@ -36,7 +38,8 @@ export class Minimap {
   private scale = 1;
   private collapsed = false;
   private whole = false;
-  private clip: ClipMm | undefined;
+  private regions: ClipMm[] = [];
+  private selected: number | undefined;
   private view: ViewRect | undefined;
   private tiles: { xs: number[]; ys: number[] } | undefined;
   private dragging = false;
@@ -76,8 +79,12 @@ export class Minimap {
     this.layout();
   }
 
-  setClip(c: ClipMm): void {
-    this.clip = c;
+  setRegions(regions: ClipMm[], selected: number | undefined): void {
+    this.regions = regions;
+    this.selected = selected;
+    const boxes = this.el.regions;
+    while (boxes.children.length > regions.length) boxes.lastElementChild!.remove();
+    while (boxes.children.length < regions.length) boxes.append(document.createElement("div"));
     this.placeBoxes();
   }
 
@@ -133,8 +140,11 @@ export class Minimap {
 
   private placeBoxes(): void {
     if (!this.plan) return;
-    const c = this.clip;
-    if (c) this.place(this.el.clipBox, { x0: c.x, y0: c.y, x1: c.x + c.width, y1: c.y + c.height });
+    this.regions.forEach((c, i) => {
+      const box = this.el.regions.children[i] as HTMLElement;
+      box.className = i === this.selected ? "region-box selected" : "region-box";
+      this.place(box, { x0: c.x, y0: c.y, x1: c.x + c.width, y1: c.y + c.height });
+    });
     if (this.view) this.place(this.el.viewBox, this.view);
   }
 

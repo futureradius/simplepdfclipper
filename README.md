@@ -17,13 +17,17 @@ double-click. No server, no upload, no installation.
 3. Open your Plan. If the PDF has several pages, pick one in the page picker; switch
    pages later with ◀ ▶ in step 1 (ADR 0014). Exports then carry the page in their
    name (`Plan_S3_Ausschnitt.svg`) and contain only that page.
-4. Set the Clip: drag its edges in the precision view (they snap to lines; hold Alt
-   to place freely; an edge stops at the Plan edge), or type the mm values. The view starts with the whole Plan; the
-   minimap in the bottom-right corner moves the view (keys: `1` whole Plan, `2` Plan
-   width, `3` 1:1, `F` Clip).
+4. Set the Clip: one or more Regions ("Bereich") of the Plan. Drag with the left
+   button on empty Plan to draw a new Region; click a Region to select it, drag its edges
+   to resize (they snap to lines; hold Alt to place freely; an edge stops at the Plan
+   edge) or inside it to move it, or type the mm values of the selected Region. `Entf`
+   or × removes it. Pan with the right or middle button, or Space + left drag. The view
+   starts with the whole Plan; the minimap in the bottom-right corner moves the view
+   (keys: `1` whole Plan, `2` Plan width, `3` 1:1, `F` selected Region).
 5. Export as SVG (for the whiteboard tool) or as PDF (for documentation; everything outside the
-   Clip is removed from the file). The "Save as" dialog opens first, then the export is
-   computed.
+   Regions is removed from the file). Several Regions are exported together as one page,
+   placed below or beside each other ("Neu anordnen" lays them out again as compactly as
+   possible; ADR 0016). The "Save as" dialog opens first, then the export is computed.
 6. To print a large Clip at real size, switch on "Auf Blätter aufteilen": the Clip is cut
    into Tiles by paper format (A4–A0 or custom) or freely (columns/rows by count or by
    length), each on its own Sheet with a Margin, cut marks and a label. Saved as numbered
@@ -56,6 +60,9 @@ is inside, otherwise the letter is removed (ADR 0005).
 - [x] Named presets for export settings (#5)
 - [x] Scanned Plans: images cropped to the Clip in the PDF too (#22)
 - [x] Lines and shapes cut exactly at the Clip edge in every export (#35)
+- [x] Clips of several Regions, chosen on the Plan, exported as one page (#36)
+- [ ] Arranging Regions freely in an "Anordnen" view (#37)
+- [ ] Clip presets, stretched to Plans of another size (#38)
 
 ## Development
 

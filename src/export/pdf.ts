@@ -53,6 +53,8 @@ export interface PdfExport {
   /** The page was rescaled to UserUnit 1 (false: Clip too large, UserUnit kept). */
   normalised: boolean;
   userUnit: number;
+  /** The Plan's own UserUnit (1 if it has none). */
+  planUserUnit: number;
   /** Content streams that could not be read: their paths were not cut at the edge. */
   uncut: number;
 }
@@ -203,7 +205,7 @@ export function exportPdf(mupdf: typeof MuPDF, planBytes: Uint8Array, opts: PdfE
     // Unreferenced objects (old content streams) are dropped.
     const pdf = doc.saveToBuffer("garbage=deduplicate,compress").asUint8Array().slice();
     page.destroy();
-    return { pdf, normalised, userUnit: normalised ? 1 : uu, uncut: cutStats.failed };
+    return { pdf, normalised, userUnit: normalised ? 1 : uu, planUserUnit: uu, uncut: cutStats.failed };
   } finally {
     doc.destroy();
   }

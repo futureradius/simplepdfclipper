@@ -5,9 +5,10 @@ import { chooseFolder, chooseSaveTarget, download, writeToFolder, type Directory
 import { rowName, tiles, type TileGrid } from "./export/tilegrid";
 import { TilesPanel } from "./ui/tilespanel";
 import { zip, type ZipEntry } from "./ui/zip";
-import { loadExportSettings, loadStoredClip, storeClip } from "./ui/storage";
+import { loadExportSettings, loadStoredRegions, storeRegions } from "./ui/storage";
 import { PresetsPanel } from "./ui/presetspanel";
 import { dragClip, onPlan, type Handle, type Point } from "./ui/clipdrag";
+import { clipSize, placeNew, removeRegion, setRect, single, suggestLayout, type Region } from "./export/regions";
 import { Minimap } from "./ui/minimap";
 import { BUSY_TIMING, BusyWindow } from "./ui/busy";
 import { exportBase, PagePicker, sourceLabel, type PageSize } from "./ui/pagepicker";
@@ -71,7 +72,11 @@ let plan:
       heightMm: number;
     }
   | undefined;
-let clip: ClipMm = { x: 0, y: 0, width: 0, height: 0 };
+/** The Clip: its Regions with their Layout (ADR 0016), and the Region being edited. */
+let regions: Region[] = [];
+let selected: number | undefined;
+/** While a drag draws a new Region: its index, once it exists. */
+let drawing: number | undefined;
 let snapIndex: SnapIndex | undefined;
 const snapToggle = $<HTMLInputElement>("snap");
 
@@ -80,7 +85,7 @@ const minimap = new Minimap(
   {
     root: $("minimap"),
     canvas: $<HTMLCanvasElement>("overview-canvas"),
-    clipBox: $("clip-box"),
+    regions: $("region-boxes"),
     viewBox: $("view-box"),
     tileGrid: document.getElementById("tile-grid") as unknown as SVGSVGElement,
     collapse: $<HTMLButtonElement>("minimap-collapse"),
@@ -90,6 +95,7 @@ const minimap = new Minimap(
   (p) => viewer.centerOn(p),
 );
 
+/** x, y, width, height of the selected Region. */
 const fields = {
   x: $<HTMLInputElement>("clip-x"),
   y: $<HTMLInputElement>("clip-y"),
@@ -97,7 +103,8 @@ const fields = {
   height: $<HTMLInputElement>("clip-h"),
 };
 
-function clampClip(c: ClipMm): ClipMm {
+/** A Region's rectangle kept on the Plan, at least 1 mm in each direction. */
+function clampRect(c: ClipMm): ClipMm {
   if (!plan) return c;
   const x = Math.min(Math.max(0, c.x), plan.widthMm - 1);
   const y = Math.min(Math.max(0, c.y), plan.heightMm - 1);
@@ -109,34 +116,94 @@ function clampClip(c: ClipMm): ClipMm {
   };
 }
 
-function setClip(c: ClipMm, from: "fields" | "other" = "other", guides: Guide[] = []): void {
-  clip = clampClip(c);
-  if (from !== "fields") {
-    fields.x.value = fmt(clip.x);
-    fields.y.value = fmt(clip.y);
-    fields.width.value = fmt(clip.width);
-    fields.height.value = fmt(clip.height);
+const rectOf = (r: Region): ClipMm => ({ x: r.x, y: r.y, width: r.width, height: r.height });
+
+/**
+ * Shows the Regions everywhere (view, minimap, list, fields, Tile grid) and remembers
+ * them (ADR 0007). With `from: "fields"` the fields keep what is being typed.
+ */
+function setRegions(next: Region[], sel: number | undefined, from: "fields" | "other" = "other", guides: Guide[] = []): void {
+  regions = next;
+  selected = sel !== undefined && sel < next.length ? sel : undefined;
+  const cur = selected === undefined ? undefined : regions[selected];
+  for (const [k, input] of Object.entries(fields) as [keyof ClipMm, HTMLInputElement][]) {
+    input.disabled = !cur;
+    if (!cur) input.value = "";
+    else if (from !== "fields") input.value = fmt(cur[k]);
   }
-  minimap.setClip(clip);
-  viewer.setClip(clip, guides);
-  storeClip(clip);
-  tilesPanel.update(clip);
+  const rects = regions.map(rectOf);
+  viewer.setRegions(rects, selected, guides);
+  minimap.setRegions(rects, selected);
+  storeRegions(regions);
+  tilesPanel.update({ x: 0, y: 0, ...clipSize(regions) });
+  showRegionList();
   showTileGrid();
+  updateButtons();
 }
+
+/** The list "Bereich 1, 2, …" with a remove button each, and the Clip's size. */
+function showRegionList(): void {
+  $("regions").replaceChildren(
+    ...regions.map((_, i) => {
+      const li = document.createElement("li");
+      li.classList.toggle("selected", i === selected);
+      const pick = document.createElement("button");
+      pick.className = "pick";
+      pick.textContent = `Bereich ${i + 1}`;
+      pick.addEventListener("click", () => setRegions(regions, i));
+      const remove = document.createElement("button");
+      remove.className = "remove";
+      remove.textContent = "×";
+      remove.title = `Bereich ${i + 1} entfernen`;
+      remove.setAttribute("aria-label", `Bereich ${i + 1} entfernen`);
+      remove.addEventListener("click", () => removeAt(i));
+      li.append(pick, remove);
+      return li;
+    }),
+  );
+  $("regions").hidden = regions.length === 0;
+  $("no-region").hidden = regions.length > 0;
+  const size = clipSize(regions);
+  $("clip-size").textContent =
+    regions.length === 0 ? "" : `Ausschnitt: ${de(size.width)} × ${de(size.height)} mm${regions.length > 1 ? ` aus ${regions.length} Bereichen` : ""}`;
+  $("relayout").hidden = regions.length < 2;
+}
+
+/** Removes a Region; the others are renumbered without gaps (ADR 0016). */
+function removeAt(i: number): void {
+  const sel = selected === undefined || selected === i ? undefined : selected > i ? selected - 1 : selected;
+  setRegions(removeRegion(regions, i), sel);
+}
+
+$("relayout").addEventListener("click", () => setRegions(suggestLayout(regions), selected));
 
 for (const input of Object.values(fields)) {
   input.addEventListener("input", () => {
+    if (selected === undefined) return;
     const v = { x: Number(fields.x.value), y: Number(fields.y.value), width: Number(fields.width.value), height: Number(fields.height.value) };
-    if (Object.values(v).every(Number.isFinite)) setClip(v, "fields");
+    if (Object.values(v).every(Number.isFinite)) setRegions(setRect(regions, selected, clampRect(v)), selected, "fields");
   });
-  input.addEventListener("change", () => setClip(clip)); // normalise display on blur
+  input.addEventListener("change", () => setRegions(regions, selected)); // normalise display on blur
 }
 
-/** Drag on a Clip handle in the precision view, with snapping. */
-function applyDrag(handle: Handle, start: ClipMm, from: Point, to: Point, altKey: boolean, visible: ViewRect, tolMm: number): Guide[] {
+/**
+ * A drag in the precision view, with snapping: Region `index` by `handle`, or a new
+ * Region drawn on empty Plan (`index` undefined). A new Region is placed beside the
+ * existing Layout (ADR 0016) as it grows.
+ */
+function applyDrag(
+  index: number | undefined,
+  handle: Handle,
+  start: ClipMm | undefined,
+  from: Point,
+  to: Point,
+  altKey: boolean,
+  visible: ViewRect,
+  tolMm: number,
+): Guide[] {
   if (!plan) return [];
   const size = { width: plan.widthMm, height: plan.heightMm };
-  let c = dragClip(start, handle, from, to, size);
+  let c = dragClip(start ?? { x: from.x, y: from.y, width: 0, height: 0 }, handle, from, to, size);
   let guides: Guide[] = [];
   if (snapIndex && snapToggle.checked && !altKey) {
     const r = snapClip(c, handle, snapIndex, tolMm, visible, { from, to });
@@ -146,7 +213,16 @@ function applyDrag(handle: Handle, start: ClipMm, from: Point, to: Point, altKey
       guides = r.guides;
     }
   }
-  setClip(c, "other", guides);
+  const rect = clampRect(c);
+  if (index !== undefined) {
+    setRegions(setRect(regions, index, rect), index, "other", guides);
+  } else if (drawing === undefined) {
+    drawing = regions.length;
+    setRegions([...regions, placeNew(regions, rect)], drawing, "other", guides);
+  } else {
+    const others = regions.filter((_, i) => i !== drawing);
+    setRegions(regions.map((r, i) => (i === drawing ? placeNew(others, rect) : r)), drawing, "other", guides);
+  }
   return guides;
 }
 
@@ -167,7 +243,9 @@ function currentGrid(): TileGrid | undefined {
 
 function showTileGrid(): void {
   const g = currentGrid();
-  if (!g || !plan) {
+  // On the Plan only for a one-Region Clip; a stitched Clip's grid belongs to "Anordnen" (ADR 0016).
+  const clip = regions.length === 1 ? regions[0]! : undefined;
+  if (!g || !plan || !clip) {
     viewer.setTiles(undefined);
     minimap.setTiles(undefined);
     return;
@@ -190,7 +268,14 @@ const viewer = new Viewer($<HTMLCanvasElement>("viewer-canvas"), {
     });
     return createImageBitmap(new ImageData(r.pixels as Uint8ClampedArray<ArrayBuffer>, r.width, r.height));
   },
-  dragClip: applyDrag,
+  dragRegion: applyDrag,
+  dragEnd() {
+    drawing = undefined;
+  },
+  select(index) {
+    drawing = undefined;
+    setRegions(regions, index);
+  },
   viewChanged(visible, zoomPercent) {
     $("zoom-label").textContent = `${zoomPercent < 10 ? de(zoomPercent, 1) : Math.round(zoomPercent)} %`;
     if (!plan) return;
@@ -211,8 +296,18 @@ window.addEventListener("keydown", (e) => {
   const t = e.target as HTMLElement;
   if (t.closest("input, textarea, select")) return; // typing in a field
   const step = e.shiftKey ? 1 : 0.1;
-  const move = (dx: number, dy: number) => setClip({ ...clip, x: clip.x + dx, y: clip.y + dy });
+  const move = (dx: number, dy: number) => {
+    if (selected === undefined) return;
+    const r = regions[selected]!;
+    setRegions(setRect(regions, selected, clampRect({ ...rectOf(r), x: r.x + dx, y: r.y + dy })), selected);
+  };
   switch (e.key) {
+    case " ":
+      viewer.setSpace(true); // Space + left drag pans (touchpads, ADR 0012)
+      break;
+    case "Delete":
+      if (selected !== undefined) removeAt(selected);
+      break;
     case "+":
     case "=":
       viewer.zoomBy(1.5);
@@ -250,6 +345,14 @@ window.addEventListener("keydown", (e) => {
   }
   e.preventDefault();
 });
+
+window.addEventListener("keyup", (e) => {
+  if (e.key !== " ") return;
+  viewer.setSpace(false);
+  // A focused button would otherwise be pressed by the Space used for panning.
+  if (!(e.target as HTMLElement).closest("input, textarea, select")) e.preventDefault();
+});
+window.addEventListener("blur", () => viewer.setSpace(false));
 
 // ---- Open a Plan -----------------------------------------------------------
 function showDetails(info: PlanInfo): void {
@@ -319,10 +422,18 @@ async function showPage(doc: { name: string; fileName: string; pages: PageSize[]
     viewer.setPlan(plan.widthMm, plan.heightMm, bitmap);
     minimap.setPlan(plan.widthMm, plan.heightMm, bitmap);
 
-    // Restore the last Clip if it fits this page (ADR 0007), else a sensible default.
-    const stored = loadStoredClip();
-    const fits = stored && stored.x + stored.width <= plan.widthMm + 0.05 && stored.y + stored.height <= plan.heightMm + 0.05;
-    setClip(fits ? stored : { x: 0, y: 0, width: plan.widthMm, height: Math.min(600, plan.heightMm) });
+    // Restore the last Regions if they fit this page (ADR 0007), else one sensible Region.
+    const stored = loadStoredRegions();
+    const { widthMm, heightMm } = plan;
+    const fits =
+      stored &&
+      stored.length > 0 &&
+      stored.every((r) => r.x >= 0 && r.y >= 0 && r.x + r.width <= widthMm + 0.05 && r.y + r.height <= heightMm + 0.05);
+    drawing = undefined;
+    setRegions(
+      fits ? stored.map((r) => ({ ...clampRect(r), at: r.at })) : single({ x: 0, y: 0, width: widthMm, height: Math.min(600, heightMm) }),
+      0,
+    );
     // Start with the whole Plan in view (ADR 0012): an overview first, not "in the thick of it".
     viewer.fitPlan();
 
@@ -441,9 +552,13 @@ let busy = false;
 /** SVG is not available while tiling (ADR 0013); nothing runs twice at once. */
 function updateButtons(): void {
   const tiling = tilesPanel.settings.enabled;
-  exportButton.disabled = busy || loading || tiling;
-  pdfButton.disabled = busy || loading || (tiling && !currentGrid());
-  const why = tiling ? "SVG-Export ist beim Aufteilen auf Blätter nicht verfügbar." : "";
+  // The last Region can be removed: then there is nothing to export (ADR 0016).
+  const none = regions.length === 0;
+  exportButton.disabled = busy || loading || tiling || none;
+  pdfButton.disabled = busy || loading || (tiling && !currentGrid()) || none;
+  $("export-hint").hidden = !none;
+  const why = none ? "Ziehe auf dem Plan einen Bereich auf." : tiling ? "SVG-Export ist beim Aufteilen auf Blätter nicht verfügbar." : "";
+  pdfButton.title = none ? why : "";
   $("svg-wrap").title = why;
   exportButton.title = why;
   $("svg-note").hidden = !tiling;
@@ -473,7 +588,7 @@ exportButton.addEventListener("click", async () => {
   status.replaceChildren();
   await busyWindow.start("SVG wird berechnet…", { button: exportButton });
   try {
-    const r = await engine.exportSvg({ clip, page: plan.page, mergeMode, textAsPaths, reuseShapes: false });
+    const r = await engine.exportSvg({ clip: regions, page: plan.page, mergeMode, textAsPaths, reuseShapes: false });
     const blob = new Blob([r.svg as BlobPart], { type: "image/svg+xml" });
     const size = blob.size;
     void busyWindow.end();
@@ -527,7 +642,7 @@ pdfButton.addEventListener("click", async () => {
   status.replaceChildren();
   await busyWindow.start("PDF wird erstellt…", { button: pdfButton });
   try {
-    const r = await engine.exportPdf({ clip, page: plan.page, sourceName: sourceLabel(plan.fileName, plan.page, plan.pages.length) });
+    const r = await engine.exportPdf({ clip: regions, page: plan.page, sourceName: sourceLabel(plan.fileName, plan.page, plan.pages.length) });
     const blob = new Blob([r.pdf as BlobPart], { type: "application/pdf" });
     void busyWindow.end();
     note(`PDF: ${de(blob.size / MB, 2)} MB · ${de(r.seconds)} s · Inhalte außerhalb des Ausschnitts entfernt`);
@@ -585,7 +700,7 @@ async function exportTiles(): Promise<void> {
   let uncut = 0;
   try {
     await engine.tilesBegin({
-      clip,
+      clip: regions,
       page: plan.page,
       sourceName: sourceLabel(plan.fileName, plan.page, plan.pages.length),
       date: new Date(),

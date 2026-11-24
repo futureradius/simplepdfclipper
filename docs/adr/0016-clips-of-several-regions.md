@@ -1,8 +1,8 @@
 # 16. Clips of several freely arranged Regions
 
 Status: accepted (2026-11-24, issue #6, decided in #14); supersedes ADR 0002. Built:
-cutting at the Clip edge (#35, for one-Region Clips; ADR 0005). Not built yet: #36, #37,
-#38.
+cutting at the Clip edge (#35, for one-Region Clips; ADR 0005), Regions on the Plan and
+their export (#36). Not built yet: #37, #38.
 
 ## Context
 
@@ -48,3 +48,47 @@ so the pieces may need to go below or beside each other.
 - The export pipeline builds the stitched Clip as one page; the Tiled Export keeps its
   two stages (ADR 0013) and cuts Tiles from that page.
 - The mouse scheme changes for everyone (ADR 0012): left edits, right/middle/Space pans.
+
+## Built: Regions on the Plan (2026-11-24, #36)
+
+- **Model:** `src/export/regions.ts`. A Region is its rectangle on the Plan plus `at`,
+  its top-left corner in the Clip. The Clip reaches from (0, 0) to the far edges of its
+  Regions; after a removal the Layout is shifted so it starts at (0, 0) again.
+- **"Plan order"** in the suggested Layout means: stacked, sorted by top edge; side by
+  side, sorted by left edge. The offset in the other direction is measured from the
+  leftmost (topmost) Region. A new Region is placed while it is being drawn, so the
+  Clip size in step 2 is right at every moment: below the Layout with its horizontal
+  offset from the leftmost existing Region (never before the Clip's start), or to the
+  right with its vertical offset, whichever gives the smaller Clip.
+- **Until the semi-automatic Layout (#37):** a resized Region keeps its place in the
+  Clip (a gap left by shrinking stays, "Neu anordnen" closes it); if it would overlap
+  another, the whole Layout is suggested anew. Moving on the Plan keeps the Layout.
+- **Step 2:** list "Bereich 1, 2, …" (click selects, × removes), the selected Region's
+  x/y/w/h fields (disabled when none is selected), the Clip's size and "Neu anordnen"
+  (with ≥ 2 Regions). With no Region, step 2 and step 3 say "Ziehe auf dem Plan einen
+  Bereich auf." and the export buttons are disabled. `F` / "Ausschnitt" shows the
+  selected Region, or all Regions if none is selected.
+- **Remembered** under `simplepdfclipper.lastRegions` (Regions with Layout); an old
+  `lastClip` rectangle is read as a one-Region Clip. If any Region does not fit the
+  Plan, all are ignored and the Plan starts with one Region (until #38 stretches).
+- **PDF:** each Region is exported on its own exactly like a one-Region Clip (removal,
+  path cutting, image crop, ADR 0005); `src/export/stitchpdf.ts` then draws each result
+  as a Form XObject at its place, clipped to the Region (a glyph kept whole at an edge
+  must not reach into the neighbour). The space between Regions has no content. The
+  document properties list every Region (Plan position, size, place in the Clip). Cost:
+  one redaction pass per Region; a one-Region Clip takes the old path unchanged.
+- **SVG:** each Region has its own collector, already placed in the stitched Clip
+  (clip and pattern ids prefixed `r1`, `r2`, …); one pass over the page feeds all of
+  them (`collectAll`: parsing the page and handing each drawing call to JS is most of
+  the time), then all items are merged and written together. Items reaching past their
+  Region's edge get a clip to the Region. The white background is drawn only behind
+  the Regions; the space between them is transparent. Paths and text are now skipped
+  by MuPDF's bounds before they are walked point by point, which also made every SVG
+  export faster. Test Plan, SVG: one 500 × 600 mm Region 4.1 → 2.4 s; legend, time
+  window and footer as three Regions 5.2 s (20.6 s with one pass per Region). PDF: the
+  same three Regions 4.8 s (one Region 1.2 s).
+- **Tiled Export:** stage 1 is the stitched PDF; Tile properties give the Tile's place
+  in the stitched Clip. The Tile grid is drawn on the Plan only for a one-Region Clip.
+- Tests: `src/export/regions.test.ts` (model, minimal fit), `src/export/stitch.test.ts`
+  (PDF pixel diff per Region, nothing from between the Regions, SVG, empty Tile),
+  `e2e/regions.spec.ts` (mouse scheme, list, removal, export, remembering).

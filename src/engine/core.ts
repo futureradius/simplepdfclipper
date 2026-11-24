@@ -23,7 +23,7 @@ import type {
 } from "./protocol";
 import { TiledPdfExport } from "../export/tiledpdf";
 import type { Tile } from "../export/tilegrid";
-import { exportPdf as runPdfExport } from "../export/pdf";
+import { exportClipPdf as runPdfExport } from "../export/stitchpdf";
 import type { SnapIndex } from "../ui/snap";
 import { extractSnapTargets } from "./snaptargets";
 import type { Matrix } from "../export/geometry";

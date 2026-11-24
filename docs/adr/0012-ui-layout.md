@@ -85,7 +85,7 @@ it was not obvious that the app had accepted the command and was working.
 - Code: `src/ui/busy.ts` (timing unit-tested), e2e in `e2e/busy.spec.ts` (tests set
   `window.__busyDelayMs = 0`) and the cancel steps in `e2e/tiled-export.spec.ts`.
 
-## Mouse scheme for Regions (decided 2026-11-24, #14; to be built in #36, #37)
+## Mouse scheme for Regions (decided 2026-11-24, #14; built in #36, "Anordnen" in #37)
 
 With several Regions (ADR 0016) the left button is needed for creating them, so:
 
@@ -98,3 +98,12 @@ With several Regions (ADR 0016) the left button is needed for creating them, so:
 - **Keys:** `B` "Bereiche wählen", `A` "Anordnen", `Entf` removes the selected Region
   (only in "Bereiche wählen"); arrow keys move the selected Region. Listed in the About
   dialog. No undo/redo.
+
+Built in #36 (`src/ui/viewer.ts`, `regionAt` in `src/ui/clipdrag.ts`): a press moving
+less than 4 px is a click. A left press grabs the selected Region's edges, corners or
+inside first, then the inside of another Region (the one drawn on top); only the
+selected Region has handles. A click outside the Plan counts as empty Plan. Cursors:
+crosshair on empty Plan, move inside a Region, resize arrows on edges, grab while Space
+is held. Space is kept from focused buttons (a held Space would press them again); in
+text fields it types as usual. Everything outside all Regions is dimmed; with several
+Regions each carries its number. `B`/`A` come with the "Anordnen" view (#37).

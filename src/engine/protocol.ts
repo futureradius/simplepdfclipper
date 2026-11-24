@@ -1,6 +1,6 @@
 // Messages between the UI and the engine (worker or in-thread fallback).
 
-import type { ClipMm, MergeMode } from "../export/index";
+import type { ClipShape, MergeMode } from "../export/index";
 import type { Tile } from "../export/tilegrid";
 import type { TiledJob } from "../export/tiledpdf";
 
@@ -55,7 +55,8 @@ export interface RegionResult extends RegionRequest {
 }
 
 export interface SvgExportRequest {
-  clip: ClipMm;
+  /** The Clip: a rectangle, or Regions with their Layout (ADR 0016). */
+  clip: ClipShape;
   page: number;
   mergeMode: MergeMode;
   textAsPaths: boolean;
@@ -72,7 +73,8 @@ export interface SvgExportResult {
 }
 
 export interface PdfExportRequest {
-  clip: ClipMm;
+  /** The Clip: a rectangle, or Regions with their Layout (ADR 0016). */
+  clip: ClipShape;
   /** Page of the Document (0-based); the export contains only this page. */
   page: number;
   sourceName: string;

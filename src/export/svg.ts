@@ -25,7 +25,11 @@ export function toSvg(
   patterns: PatternDef[],
   width: number,
   height: number,
-  options: { reuseShapes?: boolean } = {},
+  options: {
+    reuseShapes?: boolean;
+    /** White areas at the back (export units); default: the whole Clip. A stitched Clip whitens only its Regions. */
+    background?: { x0: number; y0: number; x1: number; y1: number }[];
+  } = {},
 ): SvgResult {
   const out: string[] = [];
   let elements = 0;
@@ -84,8 +88,12 @@ export function toSvg(
     out.push("</defs>");
   }
 
-  // White background exactly the size of the Clip, at the very back (ADR 0009).
-  el(`<rect width="${width}" height="${height}" fill="#fff"/>`);
+  // White background exactly the size of the Clip, at the very back (ADR 0009); in a
+  // stitched Clip only behind the Regions, the space between them stays transparent (ADR 0016).
+  if (!options.background) el(`<rect width="${width}" height="${height}" fill="#fff"/>`);
+  else
+    for (const r of options.background)
+      el(`<rect x="${num(r.x0)}" y="${num(r.y0)}" width="${num(r.x1 - r.x0)}" height="${num(r.y1 - r.y0)}" fill="#fff"/>`);
 
   for (const g of groups) {
     const first = g.items[0]!;
