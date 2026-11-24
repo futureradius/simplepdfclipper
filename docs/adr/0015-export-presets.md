@@ -52,3 +52,12 @@ to share such setups.
 - Tests: `src/ui/presets.test.ts`, `e2e/presets.spec.ts`.
 - Presets are per browser profile; moving them to another computer or colleague goes
   through export and import.
+
+## Clip presets (decided 2026-11-24, #14; to be built in #38)
+
+Regions and their Layout (ADR 0016) can be saved as a **Clip preset** (UI
+"Ausschnitt-Vorlage"), separate from Presets: a Preset still never holds the Clip, and
+loading one kind never changes the other (the Clip belongs to the Plan, a Preset to the
+output device). Same window and actions as Presets (save, overwrite, rename, delete,
+JSON export/import with numbered clashes, validated). On a Plan of another size the
+Regions are stretched to fit, with a warning (ADR 0007).

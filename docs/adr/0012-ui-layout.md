@@ -84,3 +84,17 @@ it was not obvious that the app had accepted the command and was working.
   there, but it is visible.
 - Code: `src/ui/busy.ts` (timing unit-tested), e2e in `e2e/busy.spec.ts` (tests set
   `window.__busyDelayMs = 0`) and the cancel steps in `e2e/tiled-export.spec.ts`.
+
+## Mouse scheme for Regions (decided 2026-11-24, #14; to be built in #36, #37)
+
+With several Regions (ADR 0016) the left button is needed for creating them, so:
+
+- **Left button always selects and edits:** a drag on empty Plan creates a new Region
+  and selects it; a click (< 4 px) on empty Plan deselects; a click on a Region selects
+  it; dragging its edges resizes; dragging inside moves it (on the Plan in "Bereiche
+  wählen", in the Clip in "Anordnen"). Before, dragging inside the Clip panned.
+- **Right drag, middle drag and Space + left drag pan** (Space for touchpads); the
+  browser's context menu is blocked in the view. The wheel still zooms.
+- **Keys:** `B` "Bereiche wählen", `A` "Anordnen", `Entf` removes the selected Region
+  (only in "Bereiche wählen"); arrow keys move the selected Region. Listed in the About
+  dialog. No undo/redo.
