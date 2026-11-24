@@ -1,6 +1,6 @@
 # 2. One rectangular Clip per export
 
-Status: accepted (2026-11-03)
+Status: superseded by ADR 0016 (2026-11-24): a Clip is now one or more Regions.
 
 ## Context
 

@@ -95,3 +95,15 @@ page came out blank. Such numbers are now written as 0. This affected unrotated 
 Tests: `src/export/rotate.test.ts` (pages at 0/90/180/270 with an image, shapes, hatch
 and text: PDF, Tile and SVG match the displayed area; text outside removed; no exponent
 notation), `e2e/rotated.spec.ts`.
+
+## Paths are cut, not kept whole (decided 2026-11-24, #14; to be built in #35)
+
+With several Regions (ADR 0016) a line kept whole would run invisibly through the
+neighbouring Regions, and some whiteboard tools ignore SVG clip paths. So every export
+(PDF, SVG, every Tile, also one-Region Clips) now cuts paths geometrically at the edge:
+fills exactly (curves too), strokes end at the edge without caps sticking out, dash
+patterns continue with the right phase. Nothing of a cut path remains outside, not even
+invisibly. Text: a glyph is kept whole if its centre is inside, else removed. Images:
+visible pixels + 1 px, clipped visually (PDF side: #22). MuPDF 1.28 redaction cannot
+cut line art; how the PDF side does it is researched in #34. Until #35 is built, the
+"kept whole" rule above still describes the code.

@@ -25,16 +25,32 @@ in exports are real millimetres with UserUnit applied. Programs that ignore User
 show such Plans 2.8× too small.
 
 **Clip**
-The one axis-aligned rectangle the user selects on the Plan. Everything inside is kept;
-everything outside is dropped. There is exactly one Clip per export.
+What is exported: one or more Regions of the Plan, put together. Everything inside a
+Region is kept; everything else is dropped. There is exactly one Clip per export. A Clip
+with one Region is a plain rectangle cut out of the Plan.
+
+**Region**
+One axis-aligned rectangle the user selects on the Plan, part of a Clip. UI: "Bereich".
+_Avoid_: box, clipping-box, piece
+
+**Layout**
+Where each Region sits in the Clip. Regions keep their size (1:1) and are only moved,
+never scaled or rotated; they never overlap, and the space between them stays empty.
+A suggestion places them; the user may rearrange them freely. UI: "Anordnung".
+_Avoid_: montage, composition
+
+**Clip preset**
+A named, saved set of Regions with their Layout, kept in the browser and shareable as a
+file. On a Plan of another size it is stretched to fit. UI: "Ausschnitt-Vorlage".
+_Avoid_: Preset (that is export settings only)
 
 **Snap**
-While dragging a Clip edge, the edge jumps to a nearby **Snap target**. Can be turned
+While dragging a Region edge, the edge jumps to a nearby **Snap target**. Can be turned
 on and off at any time.
 
 **Snap target**
 A horizontal or vertical line or text edge already in the Plan (grid lines, row
-borders, date column boundaries) that a Clip edge can snap to.
+borders, date column boundaries) that a Region edge can snap to.
 
 **Export**
 Writing the Clip to a file. Never rasterised: vectors and text stay vectors and text,
