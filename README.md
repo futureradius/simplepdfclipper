@@ -24,10 +24,14 @@ double-click. No server, no upload, no installation.
    or × removes it. Pan with the right or middle button, or Space + left drag. The view
    starts with the whole Plan; the minimap in the bottom-right corner moves the view
    (keys: `1` whole Plan, `2` Plan width, `3` 1:1, `F` selected Region).
+   With two or more Regions, "Anordnen" (`A`; back with `B`) shows the Clip as it will
+   be exported: drag a Region to place it (it snaps to the others' edges and stops at
+   them; dragging past the left or top edge grows the Clip), or type its place.
+   Resizing a Region on the Plan keeps touching Regions touching. "Neu anordnen" lays
+   them out again as compactly as possible (ADR 0016).
 5. Export as SVG (for the whiteboard tool) or as PDF (for documentation; everything outside the
    Regions is removed from the file). Several Regions are exported together as one page,
-   placed below or beside each other ("Neu anordnen" lays them out again as compactly as
-   possible; ADR 0016). The "Save as" dialog opens first, then the export is computed.
+   as arranged. The "Save as" dialog opens first, then the export is computed.
 6. To print a large Clip at real size, switch on "Auf Blätter aufteilen": the Clip is cut
    into Tiles by paper format (A4–A0 or custom) or freely (columns/rows by count or by
    length), each on its own Sheet with a Margin, cut marks and a label. Saved as numbered
@@ -61,7 +65,7 @@ is inside, otherwise the letter is removed (ADR 0005).
 - [x] Scanned Plans: images cropped to the Clip in the PDF too (#22)
 - [x] Lines and shapes cut exactly at the Clip edge in every export (#35)
 - [x] Clips of several Regions, chosen on the Plan, exported as one page (#36)
-- [ ] Arranging Regions freely in an "Anordnen" view (#37)
+- [x] Arranging Regions freely in an "Anordnen" view (#37)
 - [ ] Clip presets, stretched to Plans of another size (#38)
 
 ## Development

@@ -36,7 +36,9 @@ _Avoid_: box, clipping-box, piece
 **Layout**
 Where each Region sits in the Clip. Regions keep their size (1:1) and are only moved,
 never scaled or rotated; they never overlap, and the space between them stays empty.
-A suggestion places them; the user may rearrange them freely. UI: "Anordnung".
+A suggestion places them; the user may rearrange them freely in the "Anordnen" view.
+Resizing a Region on the Plan moves its edges the same way in the Layout; Regions
+touching that edge move along, others in the way are pushed. UI: "Anordnung".
 _Avoid_: montage, composition
 
 **Clip preset**

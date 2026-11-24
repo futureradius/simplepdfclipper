@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  clipBounds,
   clipSize,
+  moveInLayout,
   normaliseLayout,
   overlapsInLayout,
   placeNew,
@@ -94,19 +96,168 @@ describe("editing", () => {
     expect(out[1]).toMatchObject({ x: 50, y: 500 });
   });
 
-  it("keeps the place of a shrunk Region (a gap is fine)", () => {
-    const out = setRect(layout, 0, { x: 0, y: 0, width: 100, height: 40 });
-    expect(out.map((x) => x.at)).toEqual(layout.map((x) => x.at));
-  });
-
-  it("suggests the Layout anew when a grown Region would overlap", () => {
-    const out = setRect(layout, 0, { x: 0, y: 0, width: 100, height: 70 });
-    expect(overlapsInLayout(out)).toBe(false);
-    expect(out[1]!.at).toEqual({ x: 0, y: 70 });
-  });
-
   it("normalises a Layout that starts late", () => {
     expect(normaliseLayout([r(0, 0, 10, 10, { x: 5, y: 7 })])[0]!.at).toEqual({ x: 0, y: 0 });
+  });
+});
+
+describe("semi-automatic Layout (setRect)", () => {
+  // Three Regions side by side, touching: A | B | C, plus D below A, not touching B.
+  //   A at (0,0) 100×50, B at (100,0) 50×50, C at (150,0) 30×50, D at (0,60) 100×20.
+  const A = r(0, 0, 100, 50, { x: 0, y: 0 });
+  const B = r(500, 0, 50, 50, { x: 100, y: 0 });
+  const C = r(800, 0, 30, 50, { x: 150, y: 0 });
+  const D = r(0, 900, 100, 20, { x: 0, y: 60 });
+  const base = [A, B, C, D];
+  const ats = (rs: Region[]) => rs.map((x) => x.at);
+
+  it("moving on the Plan without resizing keeps the Layout", () => {
+    const out = setRect(base, 1, { x: 520, y: 30, width: 50, height: 50 });
+    expect(ats(out)).toEqual(ats(base));
+    expect(out[1]).toMatchObject({ x: 520, y: 30 });
+  });
+
+  it("growing the right edge moves the touching chain along", () => {
+    const out = setRect(base, 0, { x: 0, y: 0, width: 110, height: 50 });
+    expect(ats(out)).toEqual([
+      { x: 0, y: 0 },
+      { x: 110, y: 0 },
+      { x: 160, y: 0 },
+      { x: 0, y: 60 },
+    ]);
+    expect(out[0]!.width).toBe(110);
+  });
+
+  it("shrinking the right edge pulls the touching chain along", () => {
+    const out = setRect(base, 0, { x: 0, y: 0, width: 80, height: 50 });
+    expect(ats(out).slice(0, 3)).toEqual([
+      { x: 0, y: 0 },
+      { x: 80, y: 0 },
+      { x: 130, y: 0 },
+    ]);
+  });
+
+  it("shrinking the left edge moves it in the Layout, and what touches it there", () => {
+    // B's left edge moves right by 10: A (touching it) follows; C and D stay.
+    const out = setRect(base, 1, { x: 510, y: 0, width: 40, height: 50 });
+    expect(ats(out)).toEqual([
+      { x: 10, y: 0 },
+      { x: 110, y: 0 },
+      { x: 150, y: 0 },
+      { x: 0, y: 60 },
+    ]);
+  });
+
+  it("the Clip starts at (0, 0) again when its first column shrinks away", () => {
+    const out = setRect([A, B], 0, { x: 10, y: 0, width: 90, height: 50 });
+    expect(ats(out)).toEqual([
+      { x: 0, y: 0 },
+      { x: 90, y: 0 },
+    ]);
+  });
+
+  it("growing the left edge past the Clip's start grows the Clip to the left", () => {
+    // A grows 20 mm to the left: everything else shifts right by 20 (D is not touching A's left edge).
+    const grown = setRect([{ ...A, x: 20 }, B, C, D], 0, { x: 0, y: 0, width: 120, height: 50 });
+    expect(ats(grown)).toEqual([
+      { x: 0, y: 0 },
+      { x: 120, y: 0 },
+      { x: 170, y: 0 },
+      { x: 20, y: 60 },
+    ]);
+    expect(clipSize(grown)).toEqual({ width: 200, height: 80 });
+  });
+
+  it("growing the bottom edge pushes a non-touching Region just enough; it touches from then on", () => {
+    // A grows 15 mm down: D (10 mm below) is pushed by 5 and then touches A.
+    const out = setRect(base, 0, { x: 0, y: 0, width: 100, height: 65 });
+    expect(out[3]!.at).toEqual({ x: 0, y: 65 });
+    expect(overlapsInLayout(out)).toBe(false);
+    // Shrinking back pulls D along now, since it touches.
+    const back = setRect(out, 0, { x: 0, y: 0, width: 100, height: 50 });
+    expect(back[3]!.at).toEqual({ x: 0, y: 50 });
+  });
+
+  it("a pushed Region pushes the next one", () => {
+    const E = r(0, 2000, 100, 10, { x: 0, y: 85 }); // 5 mm below D
+    const out = setRect([...base, E], 0, { x: 0, y: 0, width: 100, height: 80 });
+    expect(out[3]!.at.y).toBe(80);
+    expect(out[4]!.at.y).toBe(100);
+    expect(overlapsInLayout(out)).toBe(false);
+  });
+
+  it("a chain member moving back pushes what it would overlap", () => {
+    // M sits left of B, below A, and touches B (B is tall). Shrinking A's right edge pulls B left onto M: M is pushed.
+    const a = r(0, 0, 100, 50, { x: 0, y: 0 });
+    const b = r(500, 0, 50, 100, { x: 100, y: 0 });
+    const m = r(900, 0, 100, 50, { x: 0, y: 50 });
+    const out = setRect([a, b, m], 0, { x: 0, y: 0, width: 80, height: 50 });
+    // B follows to 80, M is pushed to -20, so the Clip grows left and everything shifts by 20.
+    expect(ats(out)).toEqual([
+      { x: 20, y: 0 },
+      { x: 100, y: 0 },
+      { x: 0, y: 50 },
+    ]);
+    expect(overlapsInLayout(out)).toBe(false);
+    expect(clipBounds(out).x0).toBe(0);
+  });
+
+  it("a corner resize moves both edges", () => {
+    const out = setRect(base, 0, { x: 0, y: 0, width: 110, height: 65 });
+    expect(out[1]!.at).toEqual({ x: 110, y: 0 });
+    expect(out[3]!.at).toEqual({ x: 0, y: 65 });
+    expect(overlapsInLayout(out)).toBe(false);
+  });
+});
+
+describe("moveInLayout (arranging)", () => {
+  // A at (0,0) 100×50, B at (0,60) 40×20.
+  const A = r(0, 0, 100, 50, { x: 0, y: 0 });
+  const B = r(0, 500, 40, 20, { x: 0, y: 60 });
+
+  it("moves freely where there is room", () => {
+    const { regions } = moveInLayout([A, B], 1, { x: 30, y: 70 });
+    expect(regions[1]!.at).toEqual({ x: 30, y: 70 });
+  });
+
+  it("stops at a neighbour instead of overlapping it", () => {
+    const { regions } = moveInLayout([A, B], 1, { x: 10, y: 20 });
+    expect(regions[1]!.at).toEqual({ x: 10, y: 50 });
+    expect(overlapsInLayout(regions)).toBe(false);
+  });
+
+  it("slides along a neighbour when the other axis is free", () => {
+    // Moving up-right past A's right edge: x is free, y stops at A only while beside it.
+    const { regions } = moveInLayout([A, B], 1, { x: 120, y: 10 });
+    expect(regions[1]!.at).toEqual({ x: 120, y: 10 });
+  });
+
+  it("snaps edges to other Regions' edges and the Clip's start", () => {
+    const { regions, guides } = moveInLayout([A, B], 1, { x: 61.5, y: 52 }, { snapMm: 2 });
+    // Right edge 101.5 snaps to A's right edge 100; top 52 snaps to A's bottom 50.
+    expect(regions[1]!.at).toEqual({ x: 60, y: 50 });
+    expect(guides).toContainEqual({ vertical: true, pos: 100 });
+    expect(guides).toContainEqual({ vertical: false, pos: 50 });
+    expect(moveInLayout([A, B], 1, { x: 1, y: 70 }, { snapMm: 2 }).regions[1]!.at.x).toBe(0);
+  });
+
+  it("can go past the Clip's start; the Clip then grows there", () => {
+    const { regions } = moveInLayout([A, B], 1, { x: -30, y: 60 });
+    expect(regions[1]!.at).toEqual({ x: -30, y: 60 });
+    expect(clipBounds(regions)).toEqual({ x0: -30, y0: 0, x1: 100, y1: 80 });
+    expect(clipSize(regions)).toEqual({ width: 130, height: 80 });
+    expect(normaliseLayout(regions).map((x) => x.at)).toEqual([
+      { x: 30, y: 0 },
+      { x: 0, y: 60 },
+    ]);
+  });
+
+  it("jumps to a free place when asked (typed position)", () => {
+    const C = r(0, 0, 10, 10, { x: 200, y: 0 });
+    const jumped = moveInLayout([A, B, C], 1, { x: 150, y: 0 }, { jump: true }).regions;
+    expect(jumped[1]!.at).toEqual({ x: 150, y: 0 });
+    const blocked = moveInLayout([A, B, C], 1, { x: 50, y: 10 }, { jump: true }).regions;
+    expect(overlapsInLayout(blocked)).toBe(false);
   });
 });
 

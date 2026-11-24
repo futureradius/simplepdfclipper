@@ -1,21 +1,32 @@
 // Precision view (ADR 0003): zoomable, pannable view of the Plan with the Regions of
-// the Clip on top, the selected one with handles (ADR 0016).
+// the Clip on top, the selected one with handles (ADR 0016). In "Anordnen" it shows the
+// Clip as exported instead: each Region with its Plan content at its place in the Layout.
 //
 // Mouse (ADR 0012): the left button selects and edits (drag on empty Plan: new Region,
-// click there: deselect, click on a Region: select, edges: resize, inside: move); right
-// drag, middle drag and Space + left drag pan; the wheel zooms.
+// click there: deselect, click on a Region: select, edges: resize, inside: move; in
+// "Anordnen" a drag moves a Region in the Clip); right drag, middle drag and Space +
+// left drag pan; the wheel zooms.
 //
 // Rendering works like a map: while zooming/panning, already available images
 // are scaled (the overview as a base layer, plus recent sharp renders); once the
 // view rests, the visible area is rendered sharp in one pass by the engine.
 
 import type { ClipMm } from "../export/index";
+import { clipBounds, placed, type Region } from "../export/regions";
 import { regionAt, type Handle, type Point } from "./clipdrag";
-import type { Guide } from "./snap";
+
+/** A snap line to draw: x (vertical) or y, in view mm. */
+export interface GuideLine {
+  vertical: boolean;
+  pos: number;
+}
+
+/** What the view shows: the Plan ("Bereiche wählen") or the Clip as exported ("Anordnen"). */
+export type ViewMode = "plan" | "arrange";
 
 /** Tile grid preview (ADR 0013): cut positions in mm from the Plan origin, and Tile names. */
 export interface TileOverlay {
-  /** Column edges, left to right, including both Clip edges. */
+  /** Column edges, left to right, including both Clip edges (view mm). */
   xs: number[];
   /** Row edges, top to bottom, including both Clip edges. */
   ys: number[];
@@ -52,7 +63,12 @@ export interface ViewerCallbacks {
     altKey: boolean,
     visible: ViewRect,
     tolMm: number,
-  ): Guide[];
+  ): GuideLine[];
+  /**
+   * "Anordnen": Region `index`, whose top-left corner in the Layout was `startAt` when
+   * the drag began, is being dragged from `from` to `to` (Layout mm). Returns guides.
+   */
+  arrangeRegion(index: number, startAt: Point, from: Point, to: Point, altKey: boolean, tolMm: number): GuideLine[];
   /** The drag that changed a Region is over. */
   dragEnd(): void;
   /** A Region was clicked (its index) or empty Plan (undefined). */
@@ -70,7 +86,9 @@ const GRAB_PX = 8;
 const CLICK_PX = 4;
 const RENDER_DELAY_MS = 120;
 const MAX_RENDER_PIXELS = 16_000_000;
+/** Sharp renders kept for reuse: at least this many, more while they hold few pixels. */
 const KEEP_LAYERS = 4;
+const KEEP_PIXELS = 4 * MAX_RENDER_PIXELS;
 
 const COLORS = {
   background: "#e9e9ec",
@@ -78,6 +96,7 @@ const COLORS = {
   clip: "#2563eb",
   other: "rgba(37, 99, 235, 0.55)",
   guide: "#f59e0b",
+  checker: "#e4e6eb",
 };
 
 export class Viewer {
@@ -85,10 +104,15 @@ export class Viewer {
   private plan = { width: 1, height: 1 };
   private base: Layer | undefined;
   private layers: Layer[] = [];
-  /** The Regions on the Plan, in list order; `selected` has the handles. */
-  private regions: ClipMm[] = [];
+  /** The Regions, in list order; `selected` has the handles. */
+  private regions: Region[] = [];
   private selected: number | undefined;
-  private guides: Guide[] = [];
+  private guides: GuideLine[] = [];
+  private mode: ViewMode = "plan";
+  /** The view last used in each mode, restored when switching back. */
+  private saved: Partial<Record<ViewMode, { cx: number; cy: number; zoom: number }>> = {};
+  /** Pattern for the empty (transparent) part of the Clip in "Anordnen". */
+  private checker: CanvasPattern | null = null;
   /** Space is held: a left drag pans (touchpads). */
   private space = false;
   /** Scratch canvas for dimming everything outside the Regions. */
@@ -108,7 +132,7 @@ export class Viewer {
         index: number | undefined;
         from: Point;
         screen: Point;
-        start: ClipMm | undefined;
+        start: Region | undefined;
         cx: number;
         cy: number;
         /** Not moved far enough yet to count as a drag. */
@@ -141,15 +165,59 @@ export class Viewer {
     for (const l of this.layers) l.bitmap.close();
     this.base?.bitmap.close();
     this.layers = [];
+    this.saved = {};
     this.plan = { width: widthMm, height: heightMm };
     this.base = { bitmap: overview, rect: { x0: 0, y0: 0, x1: widthMm, y1: heightMm }, pxPerMm: overview.width / widthMm };
   }
 
-  setRegions(regions: ClipMm[], selected: number | undefined, guides: Guide[] = []): void {
+  setRegions(regions: Region[], selected: number | undefined, guides: GuideLine[] = []): void {
     this.regions = regions;
     this.selected = selected;
     this.guides = guides;
     this.requestDraw();
+    // In "Anordnen" moving a Region brings other parts of the Plan into view.
+    if (this.mode === "arrange") this.scheduleRender();
+  }
+
+  get currentMode(): ViewMode {
+    return this.mode;
+  }
+
+  /**
+   * Switches between the Plan and the Clip as exported. Each mode keeps its own view;
+   * the first time, it shows everything.
+   */
+  setMode(mode: ViewMode): void {
+    if (mode === this.mode) return;
+    this.saved[this.mode] = { cx: this.cx, cy: this.cy, zoom: this.zoom };
+    this.mode = mode;
+    this.drag = undefined;
+    this.guides = [];
+    this.canvas.style.cursor = "";
+    const v = this.saved[mode];
+    if (!v) return this.fitPlan();
+    this.cx = v.cx;
+    this.cy = v.cy;
+    this.zoom = v.zoom;
+    this.viewUpdated();
+  }
+
+  /** Moves the view by (dx, dy) mm, e.g. to follow the Layout when it is shifted. */
+  shiftView(dx: number, dy: number): void {
+    if (dx === 0 && dy === 0) return;
+    this.cx += dx;
+    this.cy += dy;
+    this.viewUpdated();
+  }
+
+  /** What the view shows in full: the Plan, or in "Anordnen" the Clip. */
+  private world(): ViewRect {
+    return this.mode === "arrange" ? clipBounds(this.regions) : { x0: 0, y0: 0, x1: this.plan.width, y1: this.plan.height };
+  }
+
+  /** Where a Region lies in the view: on the Plan, or at its place in the Clip. */
+  private box(r: Region): ClipMm {
+    return this.mode === "arrange" ? placed(r) : r;
   }
 
   /** Space held or released: while held, a left drag pans. */
@@ -166,7 +234,8 @@ export class Viewer {
 
   /** Show the selected Region, or all Regions if none is selected, with a small margin. */
   fitClip(): void {
-    const shown = this.selected !== undefined ? [this.regions[this.selected]!] : this.regions;
+    const all = this.regions.map((r) => this.box(r));
+    const shown = this.selected !== undefined && all[this.selected] ? [all[this.selected]!] : all;
     if (shown.length === 0) return;
     this.fitRect({
       x0: Math.min(...shown.map((c) => c.x)),
@@ -186,18 +255,19 @@ export class Viewer {
     this.viewUpdated();
   }
 
-  /** Show the whole Plan, centred (the start view, ADR 0012). */
+  /** Show the whole Plan (in "Anordnen": the whole Clip), centred (the start view, ADR 0012). */
   fitPlan(): void {
-    this.fitRect({ x0: 0, y0: 0, x1: this.plan.width, y1: this.plan.height }, 0.02);
+    this.fitRect(this.world(), 0.02);
   }
 
-  /** Fit the Plan's width into the view, with `topMm` near the top edge. */
+  /** Fit the Plan's (Clip's) width into the view, with `topMm` near the top edge. */
   fitWidth(topMm = 0): void {
     this.measure();
-    this.zoom = clamp(this.cssW / (this.plan.width * 1.02), MIN_ZOOM, MAX_ZOOM);
-    this.cx = this.plan.width / 2;
+    const w = this.world();
+    this.zoom = clamp(this.cssW / (Math.max(1, w.x1 - w.x0) * 1.02), MIN_ZOOM, MAX_ZOOM);
+    this.cx = (w.x0 + w.x1) / 2;
     const halfH = this.cssH / 2 / this.zoom;
-    this.cy = Math.max(Math.min(topMm, this.plan.height) - 0.03 * 2 * halfH + halfH, halfH * 0.98);
+    this.cy = Math.max(Math.min(topMm, w.y1) - 0.03 * 2 * halfH + halfH, w.y0 + halfH * 0.98);
     this.viewUpdated();
   }
 
@@ -258,9 +328,17 @@ export class Viewer {
     this.zoomAt(p.x, p.y, Math.exp(-e.deltaY * lines * 0.0015));
   }
 
-  /** What a left press at screen point `s` grabs (see regionAt). */
+  /** What a left press at screen point `s` grabs (see regionAt); in "Anordnen" a Region to move. */
   private targetAt(s: Point): { index: number; handle: Handle } | undefined {
-    return regionAt(this.regions, this.selected, this.toMm(s.x, s.y), GRAB_PX / this.zoom);
+    const p = this.toMm(s.x, s.y);
+    if (this.mode === "plan") return regionAt(this.regions, this.selected, p, GRAB_PX / this.zoom);
+    const inside = (i: number) => {
+      const b = placed(this.regions[i]!);
+      return p.x >= b.x && p.x <= b.x + b.width && p.y >= b.y && p.y <= b.y + b.height;
+    };
+    if (this.selected !== undefined && this.regions[this.selected] && inside(this.selected)) return { index: this.selected, handle: "move" };
+    for (let i = this.regions.length - 1; i >= 0; i--) if (inside(i)) return { index: i, handle: "move" };
+    return undefined;
   }
 
   private onDown(e: PointerEvent): void {
@@ -286,7 +364,7 @@ export class Viewer {
     const d = this.drag;
     if (!d) {
       const t = this.space ? undefined : this.targetAt(s);
-      this.canvas.style.cursor = this.space ? "grab" : t ? CURSOR[t.handle] : "crosshair";
+      this.canvas.style.cursor = this.space ? "grab" : t ? CURSOR[t.handle] : this.mode === "plan" ? "crosshair" : "default";
       return;
     }
     if (d.mode === "pan") {
@@ -299,7 +377,12 @@ export class Viewer {
       if (Math.hypot(s.x - d.screen.x, s.y - d.screen.y) < CLICK_PX) return;
       d.pending = false;
     }
-    const guides = this.cb.dragRegion(d.index, d.mode, d.start, d.from, this.toMm(s.x, s.y), e.altKey, this.visible(), GRAB_PX / this.zoom);
+    const to = this.toMm(s.x, s.y);
+    const tol = GRAB_PX / this.zoom;
+    let guides: GuideLine[];
+    if (this.mode === "plan") guides = this.cb.dragRegion(d.index, d.mode, d.start, d.from, to, e.altKey, this.visible(), tol);
+    else if (d.index !== undefined && d.start) guides = this.cb.arrangeRegion(d.index, d.start.at, d.from, to, e.altKey, tol);
+    else return; // a drag on the empty Clip does nothing
     this.guides = guides;
     this.requestDraw();
   }
@@ -348,8 +431,33 @@ export class Viewer {
   private viewUpdated(): void {
     this.requestDraw();
     this.cb.viewChanged(this.visible(), (this.zoom / PX_PER_MM_100) * 100);
+    this.scheduleRender();
+  }
+
+  private scheduleRender(): void {
     clearTimeout(this.renderTimer);
     this.renderTimer = setTimeout(() => void this.renderSharp(), RENDER_DELAY_MS);
+  }
+
+  /**
+   * The parts of the Plan the view shows, in Plan mm, each with the area a render for
+   * it may reach into: the visible part of the Plan, or in "Anordnen" the visible part
+   * of each Region.
+   */
+  private visibleParts(): { need: ViewRect; bound: ViewRect }[] {
+    const vis = this.visible();
+    if (this.mode === "plan") {
+      const page: ViewRect = { x0: 0, y0: 0, x1: this.plan.width, y1: this.plan.height };
+      const need = intersect(vis, page);
+      return need ? [{ need, bound: page }] : [];
+    }
+    const parts: { need: ViewRect; bound: ViewRect }[] = [];
+    for (const r of this.regions) {
+      const bound = { x0: r.x, y0: r.y, x1: r.x + r.width, y1: r.y + r.height };
+      const need = intersect(shift(vis, r.x - r.at.x, r.y - r.at.y), bound);
+      if (need) parts.push({ need, bound });
+    }
+    return parts;
   }
 
   private requestDraw(): void {
@@ -368,34 +476,36 @@ export class Viewer {
       return;
     }
     const want = this.zoom * this.dpr;
-    const vis = this.visible();
-    const page: ViewRect = { x0: 0, y0: 0, x1: this.plan.width, y1: this.plan.height };
-    const needed = intersect(vis, page);
-    if (!needed) return;
     if (want <= this.base.pxPerMm * 1.01) return; // overview is already sharp enough
-    if (this.layers.some((l) => l.pxPerMm >= want * 0.99 && covers(l.rect, needed))) return;
+    const todo = this.visibleParts().filter((p) => !this.layers.some((l) => l.pxPerMm >= want * 0.99 && covers(l.rect, p.need)));
+    if (todo.length === 0) return;
 
-    // Margin around the view so small pans stay sharp; shrink it if the image would be huge.
+    // Margin around the view so small pans stay sharp; shrink it if the images would be huge.
     let margin = 0.25;
-    let rect = intersect(expand(vis, margin), page)!;
-    while (margin > 0 && area(rect) * want * want > MAX_RENDER_PIXELS) {
+    const rects = () => todo.map((p) => intersect(expand(p.need, margin), p.bound)!);
+    let parts = rects();
+    const total = () => parts.reduce((sum, r) => sum + area(r), 0);
+    while (margin > 0 && total() * want * want > MAX_RENDER_PIXELS) {
       margin = Math.max(0, margin - 0.1);
-      rect = intersect(expand(vis, margin), page)!;
+      parts = rects();
     }
-    const pxPerMm = Math.min(want, Math.sqrt(MAX_RENDER_PIXELS / area(rect)));
+    const pxPerMm = Math.min(want, Math.sqrt(MAX_RENDER_PIXELS / total()));
 
     this.rendering = true;
     try {
       const base = this.base;
-      const bitmap = await this.cb.render(rect, pxPerMm);
-      // Another page or Plan was opened meanwhile: this image belongs to the old one.
-      if (this.base !== base) {
-        bitmap.close();
-        this.renderAgain = true;
-      } else {
+      for (const rect of parts) {
+        const bitmap = await this.cb.render(rect, pxPerMm);
+        // Another page or Plan was opened meanwhile: this image belongs to the old one.
+        if (this.base !== base) {
+          bitmap.close();
+          this.renderAgain = true;
+          break;
+        }
         // Use the actual image size (pixel counts are rounded) so nothing shifts.
         this.layers.push({ bitmap, rect, pxPerMm: bitmap.width / (rect.x1 - rect.x0) });
-        while (this.layers.length > KEEP_LAYERS) this.layers.shift()!.bitmap.close();
+        const pixels = () => this.layers.reduce((sum, l) => sum + l.bitmap.width * l.bitmap.height, 0);
+        while (this.layers.length > KEEP_LAYERS && pixels() > KEEP_PIXELS) this.layers.shift()!.bitmap.close();
         this.requestDraw();
       }
     } catch (err) {
@@ -416,39 +526,115 @@ export class Viewer {
     ctx.fillRect(0, 0, this.cssW, this.cssH);
     if (!this.base) return;
 
-    const vis = this.visible();
-    const tl = this.toScreen(0, 0);
-    ctx.fillStyle = "#fff";
-    ctx.fillRect(tl.x, tl.y, this.plan.width * this.zoom, this.plan.height * this.zoom);
-
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
-    // Base first, then sharper layers on top (older first, so the newest wins).
-    for (const layer of [this.base, ...[...this.layers].sort((a, b) => a.pxPerMm - b.pxPerMm)]) this.drawLayer(layer, vis);
-
-    this.drawTiles();
-    this.drawRegions();
+    if (this.mode === "arrange") {
+      this.drawArranged();
+    } else {
+      const tl = this.toScreen(0, 0);
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(tl.x, tl.y, this.plan.width * this.zoom, this.plan.height * this.zoom);
+      this.drawPlan(this.visible(), { x: 0, y: 0 });
+      this.drawTiles();
+      this.drawRegions();
+    }
     this.drawGuides();
   }
 
-  private drawLayer(l: Layer, vis: ViewRect): void {
+  /** The Plan images within `vis` (Plan mm), drawn shifted by `off` mm. */
+  private drawPlan(vis: ViewRect, off: Point): void {
+    // Base first, then sharper layers on top (older first, so the newest wins).
+    for (const layer of [this.base!, ...[...this.layers].sort((a, b) => a.pxPerMm - b.pxPerMm)]) this.drawLayer(layer, vis, off);
+  }
+
+  private drawLayer(l: Layer, vis: ViewRect, off: Point): void {
     const part = intersect(l.rect, vis);
     if (!part) return;
     const sx = (part.x0 - l.rect.x0) * l.pxPerMm;
     const sy = (part.y0 - l.rect.y0) * l.pxPerMm;
     const sw = (part.x1 - part.x0) * l.pxPerMm;
     const sh = (part.y1 - part.y0) * l.pxPerMm;
-    const d = this.toScreen(part.x0, part.y0);
+    const d = this.toScreen(part.x0 + off.x, part.y0 + off.y);
     this.ctx.drawImage(l.bitmap, sx, sy, sw, sh, d.x, d.y, (part.x1 - part.x0) * this.zoom, (part.y1 - part.y0) * this.zoom);
+  }
+
+  /** "Anordnen": the Clip as exported, each Region with its content at its place, empty space checkered. */
+  private drawArranged(): void {
+    const { ctx } = this;
+    const vis = this.visible();
+    const w = this.world();
+    const a = this.toScreen(w.x0, w.y0);
+    const cw = (w.x1 - w.x0) * this.zoom;
+    const ch = (w.y1 - w.y0) * this.zoom;
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(a.x, a.y, cw, ch);
+    this.checker ??= checkerPattern(ctx);
+    if (this.checker) {
+      ctx.fillStyle = this.checker;
+      ctx.fillRect(a.x, a.y, cw, ch);
+    }
+    for (const r of this.regions) {
+      const b = this.toScreen(r.at.x, r.at.y);
+      const bw = r.width * this.zoom;
+      const bh = r.height * this.zoom;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(b.x, b.y, bw, bh);
+      ctx.clip();
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(b.x, b.y, bw, bh);
+      const off = { x: r.at.x - r.x, y: r.at.y - r.y };
+      const part = intersect(shift(vis, -off.x, -off.y), { x0: r.x, y0: r.y, x1: r.x + r.width, y1: r.y + r.height });
+      if (part) this.drawPlan(part, off);
+      ctx.restore();
+    }
+    // The Clip's outline.
+    ctx.save();
+    ctx.strokeStyle = "rgba(30, 30, 40, 0.6)";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 3]);
+    ctx.strokeRect(Math.round(a.x) - 0.5, Math.round(a.y) - 0.5, Math.round(cw) + 1, Math.round(ch) + 1);
+    ctx.restore();
+    this.drawTiles();
+    this.drawRegions();
   }
 
   private drawRegions(): void {
     const { ctx } = this;
-    const boxes = this.regions.map((c) => {
+    const boxes = this.regions.map((r) => {
+      const c = this.box(r);
       const a = this.toScreen(c.x, c.y);
       return { x: a.x, y: a.y, w: c.width * this.zoom, h: c.height * this.zoom };
     });
-    // Dim everything outside the Regions (they may overlap, so they are cut out of a layer).
+    const arranging = this.mode === "arrange";
+    // Dim everything outside the Regions on the Plan (they may overlap, so they are cut out of a layer).
+    if (!arranging) this.dimOutside(boxes);
+
+    // The others lighter, the selected one last (on top) with its handles; numbered if several.
+    const order = boxes.map((_, i) => i).filter((i) => i !== this.selected);
+    if (this.selected !== undefined && boxes[this.selected]) order.push(this.selected);
+    for (const i of order) {
+      const b = boxes[i]!;
+      const sel = i === this.selected;
+      ctx.strokeStyle = sel ? COLORS.clip : COLORS.other;
+      ctx.lineWidth = sel ? 2 : arranging ? 1 : 1.5;
+      ctx.strokeRect(b.x, b.y, b.w, b.h);
+      // In "Anordnen" a Region is only moved, so it has no handles.
+      if (sel && !arranging) {
+        ctx.fillStyle = "#fff";
+        for (const [fx, fy] of HANDLE_POSITIONS) {
+          const x = b.x + fx * b.w;
+          const y = b.y + fy * b.h;
+          ctx.fillRect(x - 5, y - 5, 10, 10);
+          ctx.strokeRect(x - 5, y - 5, 10, 10);
+        }
+      }
+      if (this.regions.length > 1) this.drawNumber(i + 1, b, sel);
+    }
+  }
+
+  private dimOutside(boxes: { x: number; y: number; w: number; h: number }[]): void {
+    const { ctx } = this;
     const dim = this.dim;
     if (dim.width !== this.canvas.width || dim.height !== this.canvas.height) {
       dim.width = this.canvas.width;
@@ -461,27 +647,6 @@ export class Viewer {
     dc.fillRect(0, 0, this.cssW, this.cssH);
     for (const b of boxes) dc.clearRect(b.x, b.y, b.w, b.h);
     ctx.drawImage(dim, 0, 0, this.cssW, this.cssH);
-
-    // The others lighter, the selected one last (on top) with its handles; numbered if several.
-    const order = boxes.map((_, i) => i).filter((i) => i !== this.selected);
-    if (this.selected !== undefined && boxes[this.selected]) order.push(this.selected);
-    for (const i of order) {
-      const b = boxes[i]!;
-      const sel = i === this.selected;
-      ctx.strokeStyle = sel ? COLORS.clip : COLORS.other;
-      ctx.lineWidth = sel ? 2 : 1.5;
-      ctx.strokeRect(b.x, b.y, b.w, b.h);
-      if (sel) {
-        ctx.fillStyle = "#fff";
-        for (const [fx, fy] of HANDLE_POSITIONS) {
-          const x = b.x + fx * b.w;
-          const y = b.y + fy * b.h;
-          ctx.fillRect(x - 5, y - 5, 10, 10);
-          ctx.strokeRect(x - 5, y - 5, 10, 10);
-        }
-      }
-      if (this.regions.length > 1) this.drawNumber(i + 1, b, sel);
-    }
   }
 
   /** The Region's number in a small tag in its top-left corner (if it is big enough on screen). */
@@ -613,6 +778,21 @@ function intersect(a: ViewRect, b: ViewRect): ViewRect | null {
 
 function covers(outer: ViewRect, inner: ViewRect): boolean {
   return outer.x0 <= inner.x0 && outer.y0 <= inner.y0 && outer.x1 >= inner.x1 && outer.y1 >= inner.y1;
+}
+
+function shift(r: ViewRect, dx: number, dy: number): ViewRect {
+  return { x0: r.x0 + dx, y0: r.y0 + dy, x1: r.x1 + dx, y1: r.y1 + dy };
+}
+
+/** A small checkerboard, the usual sign for "transparent". */
+function checkerPattern(ctx: CanvasRenderingContext2D): CanvasPattern | null {
+  const c = document.createElement("canvas");
+  c.width = c.height = 16;
+  const g = c.getContext("2d")!;
+  g.fillStyle = COLORS.checker;
+  g.fillRect(0, 0, 8, 8);
+  g.fillRect(8, 8, 8, 8);
+  return ctx.createPattern(c, "repeat");
 }
 
 function expand(r: ViewRect, f: number): ViewRect {

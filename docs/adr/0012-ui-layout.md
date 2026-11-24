@@ -106,4 +106,10 @@ selected Region has handles. A click outside the Plan counts as empty Plan. Curs
 crosshair on empty Plan, move inside a Region, resize arrows on edges, grab while Space
 is held. Space is kept from focused buttons (a held Space would press them again); in
 text fields it types as usual. Everything outside all Regions is dimmed; with several
-Regions each carries its number. `B`/`A` come with the "Anordnen" view (#37).
+Regions each carries its number.
+
+Built in #37: `B` and `A` switch the mode (also by the switch in step 2; `A` only with
+≥ 2 Regions). In "Anordnen" a left press grabs a Region's inside (the selected one
+first) and a drag moves it in the Clip; a drag on the empty Clip does nothing, a click
+there deselects. Cursors: move over a Region, the arrow elsewhere. `Entf` is ignored
+there. The minimap shows what the view shows (the Plan, or the arranged Clip).
