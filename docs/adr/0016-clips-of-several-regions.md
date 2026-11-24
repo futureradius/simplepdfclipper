@@ -2,7 +2,8 @@
 
 Status: accepted (2026-11-24, issue #6, decided in #14); supersedes ADR 0002. Built:
 cutting at the Clip edge (#35, for one-Region Clips; ADR 0005), Regions on the Plan and
-their export (#36). Not built yet: #37, #38.
+their export (#36), the "Anordnen" view and the semi-automatic Layout (#37). Not built
+yet: #38.
 
 ## Context
 
@@ -60,9 +61,9 @@ so the pieces may need to go below or beside each other.
   Clip size in step 2 is right at every moment: below the Layout with its horizontal
   offset from the leftmost existing Region (never before the Clip's start), or to the
   right with its vertical offset, whichever gives the smaller Clip.
-- **Until the semi-automatic Layout (#37):** a resized Region keeps its place in the
-  Clip (a gap left by shrinking stays, "Neu anordnen" closes it); if it would overlap
-  another, the whole Layout is suggested anew. Moving on the Plan keeps the Layout.
+- **Until the semi-automatic Layout (#37):** a resized Region kept its place in the
+  Clip; if it would overlap another, the whole Layout was suggested anew. Replaced by
+  #37 (below).
 - **Step 2:** list "Bereich 1, 2, …" (click selects, × removes), the selected Region's
   x/y/w/h fields (disabled when none is selected), the Clip's size and "Neu anordnen"
   (with ≥ 2 Regions). With no Region, step 2 and step 3 say "Ziehe auf dem Plan einen
@@ -92,3 +93,47 @@ so the pieces may need to go below or beside each other.
 - Tests: `src/export/regions.test.ts` (model, minimal fit), `src/export/stitch.test.ts`
   (PDF pixel diff per Region, nothing from between the Regions, SVG, empty Tile),
   `e2e/regions.spec.ts` (mouse scheme, list, removal, export, remembering).
+
+## Built: the "Anordnen" view and the semi-automatic Layout (2026-11-24, #37)
+
+- **Two modes in step 2:** a switch "Bereiche wählen" `B` | "Anordnen" `A` above the
+  Region list, shown with ≥ 2 Regions. A new Plan starts in "Bereiche wählen"; removing
+  Regions down to one leaves "Anordnen". Each mode keeps its own view (zoom and place);
+  the first visit to "Anordnen" shows the whole Clip. The toolbar's "Ganzer Plan" and
+  "Planbreite" (`1`, `2`) become "Ganzer Ausschnitt" and "Ausschnittbreite" there.
+- **The view** (`src/ui/viewer.ts`, mode "arrange"): the world is the Clip. Each Region
+  is drawn with the Plan images (overview and sharp renders, both in Plan mm) shifted to
+  its place and clipped to it; empty space in the Clip is checkered (transparent in the
+  export), the Clip has a dashed outline, the Regions blue outlines and numbers, no
+  handles. Sharp renders are made per visible Region, sharing the pixel budget of one
+  render; renders are kept while they hold few pixels (≥ 4, up to 4 × 16 MP). The Tile
+  grid is drawn over the Clip. The minimap composes each Region's part of the Plan
+  preview at its place.
+- **Dragging** (`moveInLayout` in `src/export/regions.ts`): the target is the Region's
+  place at the drag start plus the mouse movement. Snapping first: each axis snaps the
+  Region's nearer edge to the other Regions' edges or the Clip's start (0), within 8
+  screen px; Alt or the "An Linien einrasten" switch turns it off. Then the Region
+  slides from where it is towards the target, one axis after the other (both orders
+  tried, the closer result wins), stopping at the first Region in its way. So it can't
+  jump across another Region; it goes around. Arrow keys slide the same way without
+  snapping. The fields show the place in the Clip (x/y editable, w/h read-only); a typed
+  place is taken directly if it is free, else the Region slides towards it.
+- **Growing past the start:** during a drag the Layout is not normalised, so the Clip
+  reaches from the Region dragged past its left/top edge; on release the Layout is
+  shifted to start at (0, 0) again and the view shifts with it, so nothing jumps on
+  screen. A typed place is normalised when the field is left.
+- **Semi-automatic Layout** (`setRect`): unchanged size means a move on the Plan, and
+  the Layout stays. Otherwise each axis whose size changed is handled on its own (x,
+  then y), each edge that moved by d: the Region's edge moves by d in the Layout; the
+  Regions touching that edge (edges coincide within 1e-6 mm and their extents across it
+  overlap by more than a point), and those touching them further on that side, move by
+  d too; any Region now overlapped by one of these is pushed in the direction of d just
+  far enough to touch it, and pushes in turn. Shrinking pulls the touching chain back,
+  and that may push a Region on the other side of a chain member (the Clip then grows
+  that way). Finally the Layout is normalised.
+- Tests: `src/export/regions.test.ts` (each edge growing and shrinking, chains, pushes,
+  chains of pushes, corner resizes, growth past left/top; sliding, stopping, snapping,
+  typed places), `e2e/arrange.spec.ts` (switching by button and keys, snapping and
+  stopping, arrow keys, `Entf` ignored, growing past the left edge, typed place, PDF with
+  each word where its Region now is, SVG, Tiled Export with an empty Sheet A1, leaving
+  "Anordnen" with one Region).
