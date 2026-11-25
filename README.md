@@ -66,6 +66,25 @@ of them stays in the file outside the Clip, not even invisibly. A cut line ends 
 the edge; dashes continue as before. Text at the edge keeps a letter whole if its centre
 is inside, otherwise the letter is removed (ADR 0005).
 
+## What's new in 0.2.0
+
+- **Several Regions in one Clip**: pick several parts of the Plan, place them freely in
+  the "Anordnen" view and export them together as one page (#36, #37).
+- **Exact cuts**: lines and shapes that cross the Clip edge are cut there in every export,
+  nothing stays in the file outside the Clip (#35).
+- **Scanned Plans**: the PDF, the Tiles and the SVG embed only the visible part of the
+  image (#2, #22).
+- **Rotated pages** are exported upright (#16).
+- **Multi-page PDFs**: a page picker, one page per export (#1).
+- **Minimap** and a whole-Plan start view (#4).
+- **Presets** for export settings and for Clips, also as JSON files for colleagues;
+  Clip presets stretch to Plans of another size (#5, #38).
+- **SVG Tiles** for the whiteboard, into a folder or one ZIP (#46).
+- A **busy window** while Documents load and exports run; the "Save as" dialog opens
+  before the export is computed, which fixes empty (0 KB) files (#26, #27).
+- A **calmer interface**: no header, foldable steps, resizable sidebar, help and
+  shortcuts in "Über" (#50).
+
 ## Roadmap
 
 - [x] Optimised SVG export (merging, real text, hatching, clip shapes)
