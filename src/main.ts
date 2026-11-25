@@ -15,6 +15,7 @@ import {
   moveInLayout,
   normaliseLayout,
   placeNew,
+  reorderRegion,
   removeRegion,
   setRect,
   single,
@@ -169,7 +170,11 @@ function showRegionList(): void {
       const pick = document.createElement("button");
       pick.className = "pick";
       pick.textContent = `Bereich ${i + 1}`;
-      pick.addEventListener("click", () => setRegions(regions, i));
+      pick.title = "Klicken: wählen · Ziehen: Reihenfolge ändern";
+      pick.addEventListener("click", () => {
+        if (!listDragged) setRegions(regions, i);
+      });
+      pick.addEventListener("pointerdown", (e) => dragInList(e, i, li));
       const remove = document.createElement("button");
       remove.className = "remove";
       remove.textContent = "×";
@@ -187,6 +192,53 @@ function showRegionList(): void {
     regions.length === 0 ? "" : `Ausschnitt: ${de(size.width)} × ${de(size.height)} mm${regions.length > 1 ? ` aus ${regions.length} Bereichen` : ""}`;
   $("relayout").hidden = regions.length < 2;
   $("modes").hidden = regions.length < 2;
+}
+
+/** True right after a drag in the list, so the click that ends it does not select. */
+let listDragged = false;
+
+/**
+ * Drags "Bereich n" in the list with the left button to give it another number
+ * (ADR 0016): the item moves among the others as the pointer passes their middles, and
+ * on release the Regions are renumbered. Plan and Layout stay. A click still selects.
+ */
+function dragInList(e: PointerEvent, from: number, li: HTMLLIElement): void {
+  if (e.button !== 0) return;
+  const list = $("regions");
+  const start = { x: e.clientX, y: e.clientY };
+  let dragging = false;
+  const move = (ev: PointerEvent) => {
+    if (!dragging && Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < 5) return;
+    if (!dragging) {
+      dragging = true;
+      li.classList.add("dragging");
+      list.classList.add("reordering");
+    }
+    // Before the first item the pointer is above (an earlier row) or left of the middle of (same row).
+    const others = [...list.children].filter((c) => c !== li) as HTMLElement[];
+    const next = others.find((c) => {
+      const b = c.getBoundingClientRect();
+      return ev.clientY < b.top || (ev.clientY <= b.bottom && ev.clientX < b.left + b.width / 2);
+    });
+    if (next) {
+      if (li.nextElementSibling !== next) list.insertBefore(li, next);
+    } else if (list.lastElementChild !== li) list.append(li);
+  };
+  const end = (ev: PointerEvent) => {
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", end);
+    window.removeEventListener("pointercancel", end);
+    if (!dragging) return;
+    listDragged = true;
+    setTimeout(() => (listDragged = false), 0);
+    const to = [...list.children].indexOf(li);
+    if (ev.type === "pointercancel" || to === from) return setRegions(regions, selected);
+    setRegions(reorderRegion(regions, from, to), to);
+  };
+  // On the window: the item is moved in the DOM while dragged, which would end a pointer capture.
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", end);
+  window.addEventListener("pointercancel", end);
 }
 
 /** Switches step 2 between "Bereiche wählen" and "Anordnen" (ADR 0016). */
@@ -257,8 +309,8 @@ for (const input of Object.values(fields)) {
 
 /**
  * A drag in the precision view, with snapping: Region `index` by `handle`, or a new
- * Region drawn on empty Plan (`index` undefined). A new Region is placed beside the
- * existing Layout (ADR 0016) as it grows.
+ * Region drawn on empty Plan (`index` undefined). A new Region is placed in the Layout
+ * where it lies on the Plan next to its closest Region (ADR 0016), as it grows.
  */
 function applyDrag(
   index: number | undefined,
@@ -287,10 +339,10 @@ function applyDrag(
     setRegions(setRect(regions, index, rect), index, "other", guides);
   } else if (drawing === undefined) {
     drawing = regions.length;
-    setRegions([...regions, placeNew(regions, rect)], drawing, "other", guides);
+    setRegions(normaliseLayout([...regions, placeNew(regions, rect)]), drawing, "other", guides);
   } else {
     const others = regions.filter((_, i) => i !== drawing);
-    setRegions(regions.map((r, i) => (i === drawing ? placeNew(others, rect) : r)), drawing, "other", guides);
+    setRegions(normaliseLayout(regions.map((r, i) => (i === drawing ? placeNew(others, rect) : r))), drawing, "other", guides);
   }
   return guides;
 }

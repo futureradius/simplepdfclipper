@@ -8,6 +8,7 @@ import {
   placeNew,
   readRegions,
   removeRegion,
+  reorderRegion,
   setRect,
   single,
   suggestLayout,
@@ -55,26 +56,72 @@ describe("suggestLayout (minimal fit)", () => {
   });
 });
 
-describe("placeNew", () => {
+describe("placeNew (where it lies on the Plan)", () => {
   it("starts the Clip with the first Region", () => {
     expect(placeNew([], { x: 5, y: 6, width: 7, height: 8 }).at).toEqual({ x: 0, y: 0 });
   });
 
-  it("goes below a wide Layout, keeping its horizontal offset, without moving the others", () => {
+  it("goes below a Region it lies below, keeping its offset along it, without moving the others", () => {
     const existing = [r(0, 0, 1000, 100)];
     const n = placeNew(existing, { x: 200, y: 5000, width: 300, height: 100 });
     expect(n.at).toEqual({ x: 200, y: 100 });
     expect(existing[0]!.at).toEqual({ x: 0, y: 0 });
   });
 
-  it("goes to the right of a tall Layout", () => {
-    const n = placeNew([r(0, 0, 100, 1000)], { x: 900, y: 20, width: 100, height: 900 });
-    expect(n.at).toEqual({ x: 100, y: 20 });
+  it("goes above the body when the header is drawn second, growing the Clip upward", () => {
+    // The body first, then the Plan's header above it.
+    const body = r(0, 100, 1000, 3000);
+    const n = placeNew([body], { x: 0, y: 0, width: 1000, height: 80 });
+    expect(n.at).toEqual({ x: 0, y: -80 });
+    const out = normaliseLayout([body, n]);
+    expect(out[1]!.at).toEqual({ x: 0, y: 0 });
+    expect(out[0]!.at).toEqual({ x: 0, y: 80 });
   });
 
-  it("never starts before the Clip", () => {
-    const n = placeNew([r(500, 0, 1000, 100)], { x: 0, y: 300, width: 200, height: 50 });
-    expect(n.at).toEqual({ x: 0, y: 100 });
+  it("goes to the left or right of a Region beside it, keeping the vertical offset", () => {
+    expect(placeNew([r(0, 0, 100, 1000)], { x: 900, y: 20, width: 100, height: 900 }).at).toEqual({ x: 100, y: 20 });
+    expect(placeNew([r(900, 0, 100, 1000, { x: 40, y: 0 })], { x: 0, y: 30, width: 50, height: 500 }).at).toEqual({ x: -10, y: 30 });
+  });
+
+  it("sides with the Region closest on the Plan, wherever that one sits in the Layout", () => {
+    // Legend (far top) at the Clip's start, body stacked below it.
+    const legend = r(0, 0, 500, 50);
+    const body = r(0, 5000, 500, 1000, { x: 0, y: 50 });
+    // A footnote just right of the body.
+    const n = placeNew([legend, body], { x: 520, y: 5100, width: 200, height: 300 });
+    expect(n.at).toEqual({ x: 500, y: 150 });
+  });
+
+  it("touches at the corner when it lies off both edges", () => {
+    expect(placeNew([r(0, 0, 100, 100)], { x: 300, y: 400, width: 50, height: 50 }).at).toEqual({ x: 100, y: 100 });
+  });
+
+  it("moves on, away from its closest Region, while that place is taken", () => {
+    // B was arranged below A; C lies below A on the Plan, so it goes below B.
+    const a = r(0, 0, 100, 100);
+    const b = r(500, 0, 100, 200, { x: 0, y: 100 });
+    const n = placeNew([a, b], { x: 0, y: 150, width: 100, height: 50 });
+    expect(n.at).toEqual({ x: 0, y: 300 });
+    expect(overlapsInLayout([a, b, n])).toBe(false);
+  });
+
+  it("goes beside the Layout when it overlaps its closest Region on the Plan", () => {
+    // Below: 1000 × 110; to the right: 1300 × 105. The smaller Clip wins.
+    const n = placeNew([r(0, 0, 1000, 10)], { x: 200, y: 5, width: 300, height: 100 });
+    expect(n.at).toEqual({ x: 200, y: 10 });
+  });
+});
+
+describe("reorderRegion", () => {
+  const list = [r(0, 0, 1, 1), r(10, 0, 1, 1, { x: 1, y: 0 }), r(20, 0, 1, 1, { x: 2, y: 0 })];
+
+  it("changes only the numbering", () => {
+    expect(reorderRegion(list, 2, 0).map((x) => x.x)).toEqual([20, 0, 10]);
+    expect(reorderRegion(list, 0, 2).map((x) => x.x)).toEqual([10, 20, 0]);
+    expect(reorderRegion(list, 1, 1)).toEqual(list);
+    // Plan rectangles and places in the Clip travel with their Region.
+    expect(reorderRegion(list, 2, 0)[0]).toEqual(list[2]);
+    expect(list.map((x) => x.x)).toEqual([0, 10, 20]);
   });
 });
 

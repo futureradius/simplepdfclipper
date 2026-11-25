@@ -31,12 +31,16 @@ with one Region is a plain rectangle cut out of the Plan.
 
 **Region**
 One axis-aligned rectangle the user selects on the Plan, part of a Clip. UI: "Bereich".
+Regions are numbered in list order, which the user can change by dragging; the number
+has no effect on the Plan or the Layout.
 _Avoid_: box, clipping-box, piece
 
 **Layout**
 Where each Region sits in the Clip. Regions keep their size (1:1) and are only moved,
 never scaled or rotated; they never overlap, and the space between them stays empty.
-A suggestion places them; the user may rearrange them freely in the "Anordnen" view.
+A new Region goes where it lies on the Plan, next to the Region closest to it there; the
+user may rearrange them freely in the "Anordnen" view, and "Neu anordnen" suggests a
+compact Layout.
 Resizing a Region on the Plan moves its edges the same way in the Layout; Regions
 touching that edge move along, others in the way are pushed. UI: "Anordnung".
 _Avoid_: montage, composition

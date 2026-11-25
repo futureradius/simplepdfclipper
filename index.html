@@ -130,6 +130,10 @@
       .regions li.selected .pick { color: var(--accent); font-weight: 600; }
       .regions .remove { padding: 4px 7px; color: var(--muted); border-left: 1px solid var(--line); }
       .regions .remove:hover { color: var(--severe-line); background: #fdf0f0; }
+      .regions { user-select: none; }
+      .regions .pick { cursor: grab; }
+      .regions.reordering, .regions.reordering .pick { cursor: grabbing; }
+      .regions li.dragging { opacity: 0.6; border-style: dashed; }
       .no-region { margin: 0 0 12px; padding: 7px 9px; border: 1px dashed var(--line-strong); border-radius: 6px; color: var(--muted); font-size: 13px; }
       .fields:has(input:disabled) { opacity: 0.5; }
       .field .input:has(input[readonly]) { background: #f4f5f7; }
@@ -583,6 +587,7 @@
           <tr><td><kbd>F</kbd></td><td>Gewählten Bereich zeigen, sonst alle Bereiche</td></tr>
           <tr><td><kbd>+</kbd> <kbd>−</kbd></td><td>Vergrößern, verkleinern (auch Mausrad)</td></tr>
           <tr><td>Ziehen auf dem Plan</td><td>Neuen Bereich aufziehen; Klick auf einen Bereich wählt ihn</td></tr>
+          <tr><td>„Bereich n“ in der Liste ziehen</td><td>Reihenfolge (Nummern) der Bereiche ändern</td></tr>
           <tr><td>Rechte oder mittlere Maustaste, <kbd>Leertaste</kbd> + Ziehen</td><td>Ansicht verschieben</td></tr>
           <tr><td><kbd>←</kbd> <kbd>↑</kbd> <kbd>→</kbd> <kbd>↓</kbd></td><td>Gewählten Bereich um 0,1 mm verschieben, mit <kbd>Shift</kbd> um 1 mm</td></tr>
           <tr><td><kbd>Entf</kbd></td><td>Gewählten Bereich entfernen (nicht beim Anordnen)</td></tr>

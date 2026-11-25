@@ -2,8 +2,8 @@
 
 Status: accepted (2026-11-24, issue #6, decided in #14); supersedes ADR 0002. Built:
 cutting at the Clip edge (#35, for one-Region Clips; ADR 0005), Regions on the Plan and
-their export (#36), the "Anordnen" view and the semi-automatic Layout (#37). Not built
-yet: #38.
+their export (#36), the "Anordnen" view and the semi-automatic Layout (#37), placing a
+new Region where it lies on the Plan and reordering the list (#44). Not built yet: #38.
 
 ## Context
 
@@ -26,8 +26,10 @@ so the pieces may need to go below or beside each other.
   Clip's edges. The Clip starts at its top-left corner and grows when a Region is
   dragged past it. The Tile grid is drawn in "Anordnen" (on the Plan only for a
   one-Region Clip).
-- **Suggested Layout ("minimal fit"):** when a Region is added (placed next to the
-  existing Layout, which stays) and on "Neu anordnen". It tries stacked top to bottom
+- **A new Region** goes where it lies on the Plan (#44): on the same side of the Region
+  closest to it on the Plan, touching it; the existing Layout stays.
+- **Suggested Layout ("minimal fit"):** on "Neu anordnen" (until #44 also for a new
+  Region, placed beside the existing Layout). It tries stacked top to bottom
   and side by side, both in Plan order, each Region keeping its offset from the Plan in
   the other direction (white space accepted), and keeps the smaller Clip; on a tie it
   stacks. Real rectangle packing was rejected as unpredictable.
@@ -60,7 +62,8 @@ so the pieces may need to go below or beside each other.
   leftmost (topmost) Region. A new Region is placed while it is being drawn, so the
   Clip size in step 2 is right at every moment: below the Layout with its horizontal
   offset from the leftmost existing Region (never before the Clip's start), or to the
-  right with its vertical offset, whichever gives the smaller Clip.
+  right with its vertical offset, whichever gives the smaller Clip. Replaced by #44
+  (below); this rule is now only the fallback.
 - **Until the semi-automatic Layout (#37):** a resized Region kept its place in the
   Clip; if it would overlap another, the whole Layout was suggested anew. Replaced by
   #37 (below).
@@ -137,3 +140,33 @@ so the pieces may need to go below or beside each other.
   stopping, arrow keys, `Entf` ignored, growing past the left edge, typed place, PDF with
   each word where its Region now is, SVG, Tiled Export with an empty Sheet A1, leaving
   "Anordnen" with one Region).
+
+## Built: new Regions where they lie on the Plan, reordering the list (2026-11-25, #44)
+
+Feedback on #37: a Plan's header drawn as Region 2 went below the body and had to be
+dragged around it in "Anordnen".
+
+- **Placing a new Region** (`placeNew`): the existing Region closest to it on the Plan
+  (smallest gap between the rectangles; the first one on a tie) is its reference. On
+  each axis where the new Region lies wholly before or after the reference on the Plan,
+  it is put touching the reference on that side in the Layout; where they overlap on the
+  Plan, it keeps its offset from the reference. So a header above the body goes above
+  it, a footnote to its right goes to its right, and one lying off both edges touches
+  the reference at that corner. If that place is taken, the new Region moves on along
+  the axis with the larger Plan gap, away from the reference, until it is free. The
+  existing Layout stays; the Clip grows up or left if needed (the Layout is normalised
+  as the Region is drawn). A new Region overlapping its reference on the Plan has no
+  side and goes beside the Layout as before (#36). Considered and rejected: compacting
+  the whole Layout from the Plan positions on every new Region (it would undo the
+  user's arrangement).
+- **Reordering** (`reorderRegion`): drag "Bereich n" in the list with the left button;
+  the item moves among the others as the pointer passes their middles (also across
+  wrapped rows), and on release the Regions are renumbered and the dragged one is
+  selected. Only the numbering changes, never the Plan rectangles or the Layout. A click
+  without moving (under 5 px) still selects; a drag ending where it started changes
+  nothing. Listeners sit on the window, as the item is moved in the DOM while dragged.
+- Tests: `src/export/regions.test.ts` (above, below, left, right, the closest Region
+  wherever it sits in the Layout, corner, moving on past a taken place, the fallback;
+  reordering), `e2e/arrange.spec.ts` (a header drawn second goes above the body in
+  "Anordnen", dragging "Bereich 2" before "Bereich 1", a click still selects, a drag back
+  to the start changes nothing).
