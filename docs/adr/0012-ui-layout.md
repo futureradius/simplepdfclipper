@@ -113,3 +113,39 @@ Built in #37: `B` and `A` switch the mode (also by the switch in step 2; `A` onl
 first) and a drag moves it in the Clip; a drag on the empty Clip does nothing, a click
 there deselects. Cursors: move over a Region, the arrow elsewhere. `Entf` is ignored
 there. The minimap shows what the view shows (the Plan, or the arranged Clip).
+
+## A calmer interface before 0.2.0 (2026-11-25, #50)
+
+User feedback: the sidebar and header carried more text and chrome than a returning
+user needs, and the About window was squeezed by one long shortcut.
+
+- **No header bar.** The name and logo sit small above the headline on the start page
+  (and stay the tab title and icon). "Über" is a small pill at the top right of the
+  window: on the start page, and over the top right of the Plan view in the workspace
+  (the zoom bar is bottom centre, the minimap bottom right).
+- **"Andere Datei öffnen…"** is a button with a folder icon at the end of step 1
+  ("Datei": the Document is the file, the Plan its page). Dropping a PDF still works.
+- **Foldable steps:** a click on a step's heading (1 Plan, 2 Ausschnitt, 3 Export)
+  leaves only the heading; a chevron shows the state. All open by default; the folded
+  steps are remembered in this browser. "Erweitert" stays its own fold.
+- **Resizable sidebar:** a handle on its right edge, 280–560 px and never more than half
+  the window, remembered; double-click resets to 320 px; arrow keys on the focused
+  handle change it by 16 px.
+- **Help lives in About**, not in the sidebar: the usage hints of both modes in step 2
+  are gone. The empty-Region prompt ("Ziehe auf dem Plan einen Bereich auf.") stays and
+  links "Wie geht's?" to that chapter. Hints that explain a setting's *effect* (no Margin
+  → no cut marks; SVG Tiles have no Margin) stay where the setting is.
+- **About** is 640 px wide with four chapters: "Über das Projekt", "Wie geht's" (the
+  flow from file to export plus tips), "Tastenkürzel" (key column a fixed 30 %, text
+  wraps), "Lizenz & Dank". Not "Impressum" (a legal notice in Germany).
+- **Export notes** no longer say "Inhalte außerhalb … entfernt": users expect a clip to
+  remove what is outside. Size and time stay; the PDF Tile notes keep how to put the
+  Sheets together. (The PDFs' own Subject metadata still says it.)
+- **Tile output** ("Ausgabe": single files or one file) moved out of the Tile box to just
+  above the export buttons, shown only while Tiles are on: it belongs to the export.
+- **"Ganzer Ausschnitt" is hidden in "Anordnen":** it repeated "Ausschnitt" (`F`). Key
+  `1` still shows the whole Clip there.
+- Start page texts shortened (several Ausschnitte, SVG "schlank und scharf", PDF
+  "bereit zu drucken oder zur Ablage").
+- Code: `src/ui/sidebar.ts` (width rule and stored state unit-tested), e2e in
+  `e2e/sidebar.spec.ts`.

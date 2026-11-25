@@ -40,7 +40,7 @@ test("opens from file://, snaps the Clip in the precision view and exports an SV
   await expect(page.locator("#start")).toBeVisible();
   await expect(page.locator("#start h1")).toHaveText("Genaue Ausschnitte aus großen Plänen");
   await expect(page.locator("#start .local")).toContainText("nicht hochgeladen");
-  // The tab icon is the header logo, not a second, different one.
+  // The tab icon is the start page logo, not a second, different one.
   const icon = decodeURIComponent((await page.locator('link[rel="icon"]').getAttribute("href"))!);
   for (const d of await page.locator(".brand svg path").evaluateAll((ps) => ps.map((p) => p.getAttribute("d"))))
     expect(icon).toContain(`d='${d}'`);
@@ -154,7 +154,8 @@ test("opens from file://, snaps the Clip in the precision view and exports an SV
   await page.locator("#export-pdf").click();
   const pdfFile = await pdfDownload;
   expect(pdfFile.suggestedFilename()).toBe("test-plan_Ausschnitt.pdf");
-  await expect(page.locator("#export-status")).toContainText("Inhalte außerhalb des Ausschnitts entfernt");
+  await expect(page.locator("#export-status")).toContainText("PDF:");
+  await expect(page.locator("#export-status")).not.toContainText("Inhalte außerhalb"); // users expect that (#50)
   const outDoc = mupdf.Document.openDocument(readFileSync(await pdfFile.path()), "application/pdf");
   const outPage = outDoc.loadPage(0);
   const [x0, y0, x1, y1] = outPage.getBounds();
@@ -166,7 +167,6 @@ test("opens from file://, snaps the Clip in the precision view and exports an SV
   await page.locator("#about-open").click();
   await expect(page.locator("#about")).toContainText("github.com/futureradius/simplepdfclipper");
   await expect(page.locator("#shortcuts")).toContainText("Ganzen Plan zeigen");
-  await page.screenshot({ path: "test-results/about.png" });
   await page.locator("#about-close").click();
   expect(errors).toEqual([]);
 });

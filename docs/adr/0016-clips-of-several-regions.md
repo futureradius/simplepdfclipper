@@ -105,6 +105,8 @@ so the pieces may need to go below or beside each other.
   Regions down to one leaves "Anordnen". Each mode keeps its own view (zoom and place);
   the first visit to "Anordnen" shows the whole Clip. The toolbar's "Ganzer Plan" and
   "Planbreite" (`1`, `2`) become "Ganzer Ausschnitt" and "Ausschnittbreite" there.
+  *(Since #50 the "Ganzer Ausschnitt" button is hidden there, as it repeated
+  "Ausschnitt"; key `1` still works, ADR 0012.)*
 - **The view** (`src/ui/viewer.ts`, mode "arrange"): the world is the Clip. Each Region
   is drawn with the Plan images (overview and sharp renders, both in Plan mm) shifted to
   its place and clipped to it; empty space in the Clip is checkered (transparent in the
