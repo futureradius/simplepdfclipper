@@ -38,6 +38,7 @@ import {
 import { Minimap } from "./ui/minimap";
 import { BUSY_TIMING, BusyWindow } from "./ui/busy";
 import { exportBase, PagePicker, sourceLabel, type PageSize } from "./ui/pagepicker";
+import { setUpPanelResize, setUpStepFolding } from "./ui/sidebar";
 import { snapClip, type SnapIndex } from "./ui/snap";
 import { Viewer, type GuideLine, type ViewMode, type ViewRect } from "./ui/viewer";
 
@@ -56,8 +57,23 @@ $("version").textContent = `Version ${__APP_VERSION__} vom ${__BUILD_DATE__.spli
 
 // ---- About -----------------------------------------------------------------
 const about = $<HTMLDialogElement>("about");
-$("about-open").addEventListener("click", () => about.showModal());
+$("about-open").addEventListener("click", () => {
+  about.showModal();
+  about.querySelector(".body")!.scrollTop = 0;
+});
 $("about-close").addEventListener("click", () => about.close());
+// "Wie geht's?" under the empty Region list opens About at that chapter (#50).
+$("howto-link").addEventListener("click", (e) => {
+  e.preventDefault();
+  about.showModal();
+  const howto = $("about-howto");
+  howto.scrollIntoView({ block: "start" });
+  howto.focus({ preventScroll: true });
+});
+
+// ---- Sidebar: width and folded steps (#50) -----------------------------------
+setUpPanelResize($("workspace"), $("panel-resize"));
+setUpStepFolding($("panel"));
 
 // ---- Busy window (ADR 0012) --------------------------------------------------
 // Tests set `__busyDelayMs` to see the window even for fast jobs.
@@ -326,10 +342,9 @@ function setMode(next: ViewMode): void {
   const arranging = mode === "arrange";
   $("mode-plan").setAttribute("aria-pressed", String(!arranging));
   $("mode-arrange").setAttribute("aria-pressed", String(arranging));
-  $("hint-plan").hidden = arranging;
-  $("hint-arrange").hidden = !arranging;
   document.body.dataset.mode = mode;
-  $("zoom-plan").textContent = arranging ? "Ganzer Ausschnitt" : "Ganzer Plan";
+  // "Ausschnitt" (F) already shows the whole Clip there; key 1 still does too (#50).
+  $("zoom-plan").hidden = arranging;
   $("zoom-width").textContent = arranging ? "Ausschnittbreite" : "Planbreite";
   setRegions(regions, selected);
 }
@@ -627,7 +642,6 @@ async function showPage(doc: { name: string; fileName: string; pages: PageSize[]
 
     $("start").hidden = true;
     $("workspace").hidden = false;
-    $("plan-chip").hidden = false;
     $("plan-name").textContent = doc.fileName;
     if (!sameFile) {
       $("export-status").replaceChildren();
@@ -878,7 +892,7 @@ pdfButton.addEventListener("click", async () => {
     const r = await engine.exportPdf({ clip: normaliseLayout(regions), page: plan.page, sourceName: sourceLabel(plan.fileName, plan.page, plan.pages.length) });
     const blob = new Blob([r.pdf as BlobPart], { type: "application/pdf" });
     void busyWindow.end();
-    note(`PDF: ${de(blob.size / MB, 2)} MB · ${de(r.seconds)} s · Inhalte außerhalb des Ausschnitts entfernt`);
+    note(`PDF: ${de(blob.size / MB, 2)} MB · ${de(r.seconds)} s`);
     if (r.uncut > 0) note(UNCUT_HINT, "warn");
     if (!r.normalised)
       note(
@@ -986,8 +1000,8 @@ async function exportTiles(): Promise<void> {
     void busyWindow.end();
     note(
       g.marginMm >= 2
-        ? "Inhalte außerhalb jeder Kachel entfernt. Zum Zusammensetzen den Rand an den Schnittmarken abschneiden."
-        : "Inhalte außerhalb jeder Kachel entfernt. Die Blätter ohne Rand Kante an Kante zusammensetzen.",
+        ? "Zum Zusammensetzen den Rand an den Schnittmarken abschneiden."
+        : "Die Blätter ohne Rand Kante an Kante zusammensetzen.",
       "muted",
     );
     if (uncut > 0) note(UNCUT_HINT, "warn");
@@ -1113,7 +1127,6 @@ async function exportSvgTiles(): Promise<void> {
       note(`Größte Kachel ${largest.name}: ${de(largest.size / MB, 2)} MB · ${largest.elements.toLocaleString("de-DE")} Elemente`, "muted");
     if (largest) sizeWarning(largest.size, { name: largest.name, only: saved === 1 });
     unsupportedNote(unsupported);
-    note("Inhalte außerhalb jeder Kachel entfernt. Die SVG-Kacheln haben keinen Rand: im Whiteboard Kante an Kante zusammensetzen.", "muted");
   } catch (e) {
     void busyWindow.end();
     status.textContent = `Kachel-Export fehlgeschlagen: ${String(e)}`;

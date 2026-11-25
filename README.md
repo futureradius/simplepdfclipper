@@ -53,6 +53,10 @@ double-click. No server, no upload, no installation.
    On a Plan of another size both are stretched to fit, and a yellow note says by how
    much: check the Regions then (ADR 0007, 0015).
 
+"Über" (top right) has a short guide ("Wie geht's") and all shortcuts. Drag the
+sidebar's right edge to make it wider or narrower (double-click: back to normal), and
+click a step's heading to fold it away; both are remembered (ADR 0012).
+
 Scanned Plans (pages that are images) work too: the PDF, every Tile and the SVG embed
 only the part of the image inside the Clip, so a small Clip of a scan is a small file
 (ADR 0005).
@@ -81,6 +85,7 @@ is inside, otherwise the letter is removed (ADR 0005).
 - [x] Arranging Regions freely in an "Anordnen" view (#37)
 - [x] Clip presets, stretched to Plans of another size (#38)
 - [x] Tiled Export as SVG for the whiteboard (#46)
+- [x] Calmer interface: no header, foldable steps, resizable sidebar, help in About (#50)
 
 ## Development
 

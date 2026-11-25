@@ -72,7 +72,7 @@ test("Regions are arranged in the Anordnen view and exported as arranged", async
   await expect(items).toHaveCount(2);
   await expect(page.locator("#modes")).toBeVisible();
   await expect(page.locator("#mode-plan")).toHaveAttribute("aria-pressed", "true");
-  await expect(page.locator("#hint-plan")).toBeVisible();
+  await expect(page.locator("#zoom-plan")).toBeVisible();
 
   // Switching modes: the button, B and A.
   await page.locator("#mode-arrange").click();
@@ -82,8 +82,9 @@ test("Regions are arranged in the Anordnen view and exported as arranged", async
   await page.keyboard.press("a");
   await expect(page.locator("body")).toHaveAttribute("data-mode", "arrange");
   await expect(page.locator("#mode-arrange")).toHaveAttribute("aria-pressed", "true");
-  await expect(page.locator("#hint-arrange")).toBeVisible();
-  await expect(page.locator("#zoom-plan")).toHaveText("Ganzer Ausschnitt");
+  // "Ganzer Ausschnitt" would repeat "Ausschnitt" (F) here, so it is hidden; key 1 still works (#50).
+  await expect(page.locator("#zoom-plan")).toBeHidden();
+  await expect(page.locator("#zoom-width")).toHaveText("Ausschnittbreite");
   await expect(page.locator("#fields-caption")).toHaveText("Bereich 1 im Ausschnitt");
   await expect(page.locator("#clip-w")).toHaveJSProperty("readOnly", true);
   await expect(page.locator("#clip-x")).toHaveJSProperty("readOnly", false);
@@ -93,7 +94,8 @@ test("Regions are arranged in the Anordnen view and exported as arranged", async
   const canvas = (await page.locator("#viewer-canvas").boundingBox())!;
   let map = (x: number, y: number) => ({ x, y });
   const fit = async (w: number, h: number) => {
-    await page.locator("#zoom-plan").click();
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur()); // keys are ignored in fields
+    await page.keyboard.press("1");
     const zoom = Math.min(canvas.width / (w * 1.04), canvas.height / (h * 1.04));
     map = (x, y) => ({ x: canvas.x + canvas.width / 2 + (x - w / 2) * zoom, y: canvas.y + canvas.height / 2 + (y - h / 2) * zoom });
   };
@@ -222,6 +224,7 @@ test("Regions are arranged in the Anordnen view and exported as arranged", async
   await page.locator("#regions .pick").first().click(); // keys go to the fields and switches otherwise
   await page.keyboard.press("b");
   await expect(page.locator("body")).toHaveAttribute("data-mode", "plan");
+  await expect(page.locator("#zoom-plan")).toBeVisible();
   await expect(page.locator("#zoom-plan")).toHaveText("Ganzer Plan");
   await page.locator("#regions .remove").nth(1).click();
   await expect(items).toHaveCount(1);
@@ -256,7 +259,7 @@ test("removing a Region in Anordnen leaves the view when one is left", async ({ 
   await expect(page.locator("body")).toHaveAttribute("data-mode", "arrange");
   await page.locator("#regions .remove").first().click();
   await expect(page.locator("body")).toHaveAttribute("data-mode", "plan");
-  await expect(page.locator("#hint-plan")).toBeVisible();
+  await expect(page.locator("#zoom-plan")).toBeVisible();
 });
 
 test("a new Region goes where it lies on the Plan; the list is reordered by dragging", async ({ page }) => {

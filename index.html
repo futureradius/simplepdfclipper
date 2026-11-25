@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>simple pdf clipper</title>
-    <!-- Same as the logo in the header: the "crop" icon from Lucide (ISC license), https://lucide.dev/icons/crop -->
+    <!-- Same as the logo on the start page: the "crop" icon from Lucide (ISC license), https://lucide.dev/icons/crop -->
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232563eb' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><path d='M6 2v14a2 2 0 0 0 2 2h14'/><path d='M18 22V8a2 2 0 0 0-2-2H2'/></svg>" />
     <style>
       :root {
@@ -36,21 +36,16 @@
       button, input, select { font: inherit; color: inherit; }
       [hidden] { display: none !important; }
 
-      /* ---- Header ---------------------------------------------------------- */
-      header {
-        height: 52px;
-        flex: 0 0 auto;
-        display: flex;
-        align-items: center;
-        gap: 14px;
-        padding: 0 16px;
-        background: var(--surface);
-        border-bottom: 1px solid var(--line);
-      }
-      .brand { display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 15px; letter-spacing: 0.1px; }
+      /* ---- Brand and "Über" (no header bar, #50) ----------------------------- */
+      .brand { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 0 0 14px; font-weight: 600; font-size: 14px; letter-spacing: 0.1px; color: var(--muted); }
       .brand svg { color: var(--accent); }
-      #plan-chip { display: flex; align-items: center; gap: 10px; min-width: 0; color: var(--muted); font-size: 13px; }
-      .spacer { flex: 1; }
+      /* Top right of the window: on the start page, and over the Plan view in the workspace. */
+      #about-open {
+        position: fixed; top: 12px; right: 16px; z-index: 5;
+        height: 30px; padding: 0 12px; font-size: 13px; color: var(--muted);
+        background: rgba(255, 255, 255, 0.96); border-color: var(--line); border-radius: 15px; box-shadow: var(--shadow);
+      }
+      #about-open:hover { color: var(--text); background: #fff; }
 
       /* ---- Buttons ----------------------------------------------------------- */
       .btn {
@@ -97,11 +92,32 @@
       #start-error { color: var(--severe-line); }
 
       /* ---- Workspace ----------------------------------------------------------- */
-      .app { flex: 1; min-height: 0; display: grid; grid-template-columns: 320px 1fr; }
+      .app { flex: 1; min-height: 0; display: grid; grid-template-columns: var(--panel-w, 320px) 1fr; position: relative; }
       .panel { background: var(--surface); border-right: 1px solid var(--line); overflow: hidden auto; padding: 6px 0 18px; }
+      /* Drag handle on the sidebar's right edge (#50). */
+      .panel-resize {
+        position: absolute; top: 0; bottom: 0; left: calc(var(--panel-w, 320px) - 4px); width: 8px; z-index: 3;
+        cursor: col-resize; touch-action: none;
+      }
+      .panel-resize::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; background: transparent; transition: background 0.15s; }
+      .panel-resize:hover::after, .panel-resize:focus-visible::after, body.resizing-panel .panel-resize::after { background: var(--accent); }
+      .panel-resize:focus-visible { outline: none; }
+      body.resizing-panel { cursor: col-resize; user-select: none; }
       .step { padding: 14px 18px 16px; border-bottom: 1px solid var(--line); }
       .step:last-child { border-bottom: 0; }
-      .step h2 { display: flex; align-items: center; gap: 9px; font-size: 14px; margin: 0 0 12px; }
+      .step h2 { font-size: 14px; margin: 0 0 12px; }
+      /* Folding a step leaves only its heading (#50). */
+      .step.folded { padding-bottom: 14px; }
+      .step.folded h2 { margin-bottom: 0; }
+      .step.folded > :not(h2) { display: none !important; }
+      .step-toggle {
+        display: flex; align-items: center; gap: 9px; width: 100%; margin: 0; padding: 0;
+        border: 0; background: transparent; font: inherit; font-weight: inherit; color: inherit; text-align: left; cursor: pointer;
+      }
+      .step-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+      .step-toggle .chev { margin-left: auto; color: var(--muted); transition: transform 0.15s; }
+      .step-toggle:hover .chev { color: var(--text); }
+      .step.folded .step-toggle .chev { transform: rotate(-90deg); }
       .step h2 .n {
         width: 22px; height: 22px; border-radius: 50%;
         background: var(--accent-soft); color: var(--accent);
@@ -135,6 +151,9 @@
       .regions.reordering, .regions.reordering .pick { cursor: grabbing; }
       .regions li.dragging { opacity: 0.6; border-style: dashed; }
       .no-region { margin: 0 0 12px; padding: 7px 9px; border: 1px dashed var(--line-strong); border-radius: 6px; color: var(--muted); font-size: 13px; }
+      .no-region a { color: var(--accent); white-space: nowrap; }
+      #open-other { width: 100%; margin-top: 10px; }
+      #open-other svg { color: var(--muted); }
       .fields:has(input:disabled) { opacity: 0.5; }
       .field .input:has(input[readonly]) { background: #f4f5f7; }
       .field input[readonly] { color: var(--muted); }
@@ -175,6 +194,7 @@
       #tiles-free { display: grid; gap: 10px; }
       .margin-row { grid-template-columns: 1fr 1fr; }
       #tiles-margin-hint, #tiles-svg-hint { margin: -4px 0 0; }
+      .output { margin: 0 0 12px; }
       .output label { display: block; margin: 3px 0; }
       #tiles-summary { font-size: 13px; }
       #tiles-summary p { margin: 0; }
@@ -237,10 +257,19 @@
       dialog h2 { margin: 0 0 4px; font-size: 18px; }
       dialog p { margin: 10px 0; }
       dialog a { color: var(--accent); }
-      table.keys { border-collapse: collapse; margin: 4px 0 12px; font-size: 13px; }
+      /* The About window: wide enough for the chapters, the key column wraps at a third (#50). */
+      dialog#about { width: min(640px, calc(100% - 32px)); }
+      dialog#about .body { max-height: calc(100vh - 140px); overflow: hidden auto; }
+      dialog#about ol { margin: 6px 0 10px; padding-left: 20px; }
+      dialog#about ul { margin: 6px 0 10px; padding-left: 20px; }
+      dialog#about li { margin: 0 0 6px; }
+      #about-howto:focus { outline: none; }
+      table.keys { border-collapse: collapse; margin: 4px 0 12px; font-size: 13px; width: 100%; }
       table.keys td { padding: 3px 12px 3px 0; vertical-align: top; }
-      table.keys td:first-child { white-space: nowrap; }
-      dialog h3 { margin: 16px 0 6px; font-size: 14px; }
+      /* No nowrap: a long key description wraps instead of pushing the explanations aside. */
+      table.keys { table-layout: fixed; }
+      table.keys td:first-child { width: 30%; }
+      dialog h3 { margin: 18px 0 6px; font-size: 14px; }
       dialog .foot { display: flex; justify-content: flex-end; padding: 12px 16px 16px; }
       /* ---- Presets (ADR 0015) ------------------------------------------------------ */
       .preset-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; margin: 0 0 12px; }
@@ -325,33 +354,24 @@
     </style>
   </head>
   <body>
-    <header>
-      <div class="brand">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M6 2v14a2 2 0 0 0 2 2h14" /><path d="M18 22V8a2 2 0 0 0-2-2H2" />
-        </svg>
-        simple pdf clipper
-      </div>
-      <div id="plan-chip" hidden>
-        <button class="btn ghost" id="open-other" title="Anderen Plan öffnen">Anderen Plan öffnen…</button>
-      </div>
-      <div class="spacer"></div>
-      <button class="btn ghost" id="about-open">Über</button>
-      <input id="file" type="file" accept="application/pdf,.pdf" hidden disabled />
-    </header>
+    <button class="btn" id="about-open" title="Über das Werkzeug, Anleitung und Tastenkürzel">Über</button>
+    <input id="file" type="file" accept="application/pdf,.pdf" hidden disabled />
 
     <main id="start">
       <div class="start-stack">
       <section class="intro">
+        <div class="brand">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M6 2v14a2 2 0 0 0 2 2h14" /><path d="M18 22V8a2 2 0 0 0-2-2H2" />
+          </svg>
+          simple pdf clipper
+        </div>
         <h1>Genaue Ausschnitte aus großen Plänen</h1>
-        <p>
-          Aus einem großen PDF-Plan, etwa einem Bauzeitenplan, einen Rahmen um den gerade wichtigen
-          Bereich ziehen und nur diesen Ausschnitt speichern:
-        </p>
+        <p>Aus einer großen PDF-Datei einen oder mehrere Ausschnitte markieren, aufteilen und als SVG oder PDF exportieren.</p>
         <ul class="uses">
-          <li><strong>SVG</strong>schlank und scharf, für Whiteboard-Programme</li>
-          <li><strong>PDF</strong>für die Dokumentation; was außerhalb liegt, wird wirklich entfernt</li>
-          <li><strong>In Kacheln aufgeteilt</strong>als PDF zum Drucken in Originalgröße, als SVG für riesige Ausschnitte im Whiteboard</li>
+          <li><strong>SVG</strong>schlank und scharf</li>
+          <li><strong>PDF</strong>bereit zu drucken oder zur Ablage</li>
+          <li><strong>In Kacheln aufgeteilt</strong>der Ausschnitt kann auf Papierformate oder frei aufgeteilt werden.</li>
         </ul>
       </section>
       <div class="drop">
@@ -376,9 +396,9 @@
     </main>
 
     <div class="app" id="workspace" hidden>
-      <aside class="panel">
-        <section class="step">
-          <h2><span class="n">1</span>Plan</h2>
+      <aside class="panel" id="panel">
+        <section class="step" data-step="1">
+          <h2><button class="step-toggle" aria-expanded="true"><span class="n">1</span>Plan<svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg></button></h2>
           <div class="plan-name" id="plan-name"></div>
           <div class="pager" id="pager" hidden>
             <button class="btn" id="page-prev" title="Vorherige Seite" aria-label="Vorherige Seite">◀</button>
@@ -386,10 +406,16 @@
             <button class="btn" id="page-next" title="Nächste Seite" aria-label="Nächste Seite">▶</button>
           </div>
           <div class="muted" id="plan-info"></div>
+          <button class="btn" id="open-other">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
+            </svg>
+            Andere Datei öffnen…
+          </button>
         </section>
 
-        <section class="step">
-          <h2><span class="n">2</span>Ausschnitt</h2>
+        <section class="step" data-step="2">
+          <h2><button class="step-toggle" aria-expanded="true"><span class="n">2</span>Ausschnitt<svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg></button></h2>
           <div class="preset-row">
             <label for="clip-preset">Vorlage</label>
             <div class="input"><select id="clip-preset" aria-label="Ausschnitt-Vorlage"></select></div>
@@ -404,7 +430,7 @@
             <button id="mode-arrange" aria-pressed="false" title="Bereiche im Ausschnitt anordnen (A)">Anordnen<kbd>A</kbd></button>
           </div>
           <ul class="regions" id="regions" aria-label="Bereiche"></ul>
-          <p class="no-region" id="no-region" hidden>Ziehe auf dem Plan einen Bereich auf.</p>
+          <p class="no-region" id="no-region" hidden>Ziehe auf dem Plan einen Bereich auf. <a href="#about-howto" id="howto-link">Wie geht's?</a></p>
           <div class="muted fields-caption" id="fields-caption"></div>
           <div class="fields">
             <div class="field"><label for="clip-x">Links</label><div class="input"><input id="clip-x" type="number" step="0.1" min="0" /><span class="unit">mm</span></div></div>
@@ -418,20 +444,10 @@
           </div>
           <label class="switch"><input id="snap" type="checkbox" checked /> An Linien einrasten</label>
           <div class="muted" id="snap-status"></div>
-          <div class="hint" id="hint-plan">
-            <p>Auf dem Plan ziehen: neuer Bereich. Kanten und Ecken ziehen: Größe ändern, innen ziehen: verschieben. <kbd>Alt</kbd> beim Ziehen: frei platzieren.</p>
-            <p>Mit rechter oder mittlerer Maustaste ziehen, oder <kbd>Leertaste</kbd> halten und ziehen: Ansicht verschieben.</p>
-            <p>Pfeiltasten verschieben um 0,1 mm, mit <kbd>Shift</kbd> um 1 mm. <kbd>Entf</kbd> entfernt den Bereich.</p>
-          </div>
-          <div class="hint" id="hint-arrange" hidden>
-            <p>Bereich ziehen: im Ausschnitt verschieben. Er rastet an den Kanten der anderen Bereiche ein und hält an ihnen an. <kbd>Alt</kbd> beim Ziehen: ohne Einrasten.</p>
-            <p>Über den linken oder oberen Rand hinaus ziehen vergrößert den Ausschnitt dorthin.</p>
-            <p>Pfeiltasten verschieben um 0,1 mm, mit <kbd>Shift</kbd> um 1 mm. Größe und Inhalt ändern: unter „Bereiche wählen“.</p>
-          </div>
         </section>
 
-        <section class="step">
-          <h2><span class="n">3</span>Export</h2>
+        <section class="step" data-step="3">
+          <h2><button class="step-toggle" aria-expanded="true"><span class="n">3</span>Export<svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg></button></h2>
           <div class="preset-row">
             <label for="preset">Vorlage</label>
             <div class="input"><select id="preset"></select></div>
@@ -479,14 +495,15 @@
             </div>
             <p class="hint" id="tiles-margin-hint" hidden>Ohne Rand gibt es keine Schnittmarken und keine Beschriftung. Bürodrucker drucken nicht bis an die Blattkante; dort können Inhalte fehlen.</p>
             <p class="hint" id="tiles-svg-hint" hidden></p>
-            <div class="output" role="radiogroup" aria-label="Ausgabe">
-              <div class="muted">Ausgabe</div>
-              <label><input type="radio" name="tiles-output" value="files" /> Einzelne Dateien (in einen Ordner)</label>
-              <label><input type="radio" name="tiles-output" value="multipage" /> Eine Datei (PDF mehrseitig, SVG als ZIP)</label>
-            </div>
             <div id="tiles-summary"></div>
           </div>
           <p class="hint" id="export-hint" hidden>Ziehe auf dem Plan einen Bereich auf.</p>
+          <!-- Belongs to the export, so it sits above the buttons; only while Tiles are on (#50). -->
+          <div class="output" id="tiles-output" role="radiogroup" aria-label="Ausgabe" hidden>
+            <div class="muted">Ausgabe</div>
+            <label><input type="radio" name="tiles-output" value="files" /> Einzelne Dateien (in einen Ordner)</label>
+            <label><input type="radio" name="tiles-output" value="multipage" /> Eine Datei (PDF mehrseitig, SVG als ZIP)</label>
+          </div>
           <div class="export-buttons">
             <span id="svg-wrap"><button class="btn primary" id="export-svg">SVG exportieren</button></span>
             <button class="btn" id="export-pdf">PDF exportieren</button>
@@ -512,6 +529,8 @@
           </details>
         </section>
       </aside>
+      <div class="panel-resize" id="panel-resize" role="separator" aria-orientation="vertical" tabindex="0"
+        aria-label="Breite der Seitenleiste" title="Ziehen: Seitenleiste breiter oder schmaler. Doppelklick: Standardbreite"></div>
 
       <div class="viewer" id="viewer">
         <canvas id="viewer-canvas"></canvas>
@@ -609,7 +628,22 @@
       <div class="body">
         <h2>simple pdf clipper</h2>
         <div class="muted" id="version"></div>
+        <h3>Über das Projekt</h3>
         <p>Schneidet einen genauen Ausschnitt aus großen Vektor-PDFs und speichert ihn als schlankes SVG oder als PDF, in dem alles außerhalb des Ausschnitts wirklich entfernt ist. Große Ausschnitte lassen sich in Kacheln aufteilen: als PDF zum Drucken in Originalgröße, als SVG-Dateien, die im Whiteboard Kante an Kante wieder zusammenpassen. Läuft vollständig lokal; der Plan verlässt diesen Computer nicht.</p>
+        <h3 id="about-howto" tabindex="-1">Wie geht's</h3>
+        <ol>
+          <li><strong>Datei öffnen.</strong> Eine PDF-Datei in das Fenster ziehen oder „Plan auswählen…“ klicken. Hat die Datei mehrere Seiten, die Seite wählen, die bearbeitet werden soll; in Schritt 1 lässt sie sich mit ◀ ▶ jederzeit wechseln.</li>
+          <li><strong>Bereiche aufziehen.</strong> Auf dem Plan ziehen: neuer Bereich. Kanten und Ecken ziehen: Größe ändern, innen ziehen: verschieben. Die Kanten rasten an Linien des Plans ein, mit <kbd>Alt</kbd> beim Ziehen frei. Links, Oben, Breite und Höhe lassen sich auch in Millimetern eingeben. Pfeiltasten verschieben den gewählten Bereich um 0,1 mm, mit <kbd>Shift</kbd> um 1 mm; <kbd>Entf</kbd> entfernt ihn.</li>
+          <li><strong>Anordnen</strong> (ab zwei Bereichen). Zusammen ergeben die Bereiche den Ausschnitt. Unter „Anordnen“ die Bereiche so ziehen, wie sie im Export liegen sollen: Sie rasten an den Kanten der anderen Bereiche ein und halten dort an, mit <kbd>Alt</kbd> ohne Einrasten. Über den linken oder oberen Rand hinaus ziehen vergrößert den Ausschnitt dorthin. „Neu anordnen“ legt alle Bereiche so kompakt wie möglich zusammen. Größe und Inhalt ändern: unter „Bereiche wählen“.</li>
+          <li><strong>Exportieren.</strong> Als SVG oder PDF speichern. Mit „In Kacheln aufteilen“ wird der Ausschnitt auf Papierformate oder in eigene Spalten und Zeilen aufgeteilt: als PDF zum Drucken, als SVG fürs Whiteboard.</li>
+        </ol>
+        <p><strong>Gut zu wissen</strong></p>
+        <ul>
+          <li>Ansicht verschieben: mit rechter oder mittlerer Maustaste ziehen, oder <kbd>Leertaste</kbd> halten und ziehen. Das Mausrad zoomt.</li>
+          <li>Die Übersicht unten rechts zeigt, wo man gerade ist; ein Klick oder Ziehen darin springt dorthin.</li>
+          <li>Ausschnitte (Schritt 2) und Export-Einstellungen (Schritt 3) lassen sich mit ✎ als Vorlage speichern. Eine Ausschnitt-Vorlage passt sich an Pläne anderer Größe an.</li>
+          <li>Die Schritte links lassen sich mit einem Klick auf die Überschrift einklappen, die Seitenleiste am rechten Rand breiter oder schmaler ziehen.</li>
+        </ul>
         <h3>Tastenkürzel</h3>
         <table class="keys" id="shortcuts">
           <tr><td><kbd>B</kbd></td><td>Bereiche wählen: Bereiche auf dem Plan aufziehen und ändern</td></tr>
@@ -621,11 +655,12 @@
           <tr><td><kbd>+</kbd> <kbd>−</kbd></td><td>Vergrößern, verkleinern (auch Mausrad)</td></tr>
           <tr><td>Ziehen auf dem Plan</td><td>Neuen Bereich aufziehen; Klick auf einen Bereich wählt ihn</td></tr>
           <tr><td>„Bereich n“ in der Liste ziehen</td><td>Reihenfolge (Nummern) der Bereiche ändern</td></tr>
-          <tr><td>Rechte oder mittlere Maustaste, <kbd>Leertaste</kbd> + Ziehen</td><td>Ansicht verschieben</td></tr>
+          <tr><td>Rechte/mittlere Maustaste oder <kbd>Leertaste</kbd> + Ziehen</td><td>Ansicht verschieben</td></tr>
           <tr><td><kbd>←</kbd> <kbd>↑</kbd> <kbd>→</kbd> <kbd>↓</kbd></td><td>Gewählten Bereich um 0,1 mm verschieben, mit <kbd>Shift</kbd> um 1 mm</td></tr>
           <tr><td><kbd>Entf</kbd></td><td>Gewählten Bereich entfernen (nicht beim Anordnen)</td></tr>
           <tr><td><kbd>Alt</kbd> beim Ziehen</td><td>Frei platzieren, ohne Einrasten</td></tr>
         </table>
+        <h3>Lizenz &amp; Dank</h3>
         <p>Quellcode: <a href="https://github.com/futureradius/simplepdfclipper" target="_blank" rel="noopener">github.com/futureradius/simplepdfclipper</a></p>
         <p class="muted">
           Lizenz: GNU AGPL-3.0 oder neuer.<br />

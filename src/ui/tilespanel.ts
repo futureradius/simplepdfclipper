@@ -142,6 +142,7 @@ export class TilesPanel {
   private refresh(normaliseLeading = false): void {
     const s = this.settings;
     $("tiles-panel").hidden = !s.enabled;
+    $("tiles-output").hidden = !s.enabled; // above the export buttons, outside the Tile box (#50)
     $("tiles-paper").hidden = s.mode !== "paper";
     $("tiles-free").hidden = s.mode !== "free";
     for (const el of document.querySelectorAll<HTMLElement>("[data-custom]")) el.hidden = s.format !== "custom";
