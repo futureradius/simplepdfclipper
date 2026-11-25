@@ -63,7 +63,7 @@ test("Clip presets: save, load, changed, stretched with a note, export, import",
   const note = page.locator("#stretch-note");
   const pickSecond = async () => {
     await page.locator("#regions .pick").nth(1).click();
-    await expect(page.locator("#fields-caption")).toHaveText("Bereich 2 auf dem Plan");
+    await expect(page.locator("#regions li").nth(1)).toHaveClass(/selected/);
   };
   await expect(page.locator("#regions li")).toHaveCount(2);
   await expect(note).toBeHidden(); // same size: restored exactly
