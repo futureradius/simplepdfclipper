@@ -74,7 +74,8 @@ so the pieces may need to go below or beside each other.
   selected Region, or all Regions if none is selected.
 - **Remembered** under `simplepdfclipper.lastRegions` (Regions with Layout); an old
   `lastClip` rectangle is read as a one-Region Clip. If any Region does not fit the
-  Plan, all are ignored and the Plan starts with one Region (until #38 stretches).
+  Plan, all are ignored and the Plan starts with one Region. Since #38 they are stretched
+  to a Plan of another size instead (ADR 0007).
 - **PDF:** each Region is exported on its own exactly like a one-Region Clip (removal,
   path cutting, image crop, ADR 0005); `src/export/stitchpdf.ts` then draws each result
   as a Form XObject at its place, clipped to the Region (a glyph kept whole at an edge
@@ -170,3 +171,10 @@ dragged around it in "Anordnen".
   reordering), `e2e/arrange.spec.ts` (a header drawn second goes above the body in
   "Anordnen", dragging "Bereich 2" before "Bereich 1", a click still selects, a drag back
   to the start changes nothing).
+
+## Built: Clip presets and stretching (2026-11-25, #38)
+
+See ADR 0015 (Clip presets) and ADR 0007 (stretching, the note). The list in step 2 is
+now updated in place while the number of Regions stays the same: rebuilding it swallowed
+a click on "Bereich n" made right after typing in a field (the field's "change" on
+blur showed the Regions again between mousedown and click).

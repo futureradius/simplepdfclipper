@@ -374,6 +374,45 @@ export function moveInLayout(
   return { regions: out, guides };
 }
 
+// ---- Stretching to another Plan size (ADR 0007, 0015) ---------------------------------
+
+/**
+ * Maps every Layout edge along one axis by `factor`. Edges that coincide (touching
+ * Regions) are mapped once, so they still coincide afterwards.
+ */
+function edgeMap(values: number[], factor: number): (v: number) => number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const reps: number[] = [];
+  for (const v of sorted) if (reps.length === 0 || v - reps[reps.length - 1]! > EPS) reps.push(v);
+  return (v) => {
+    let best = reps[0]!;
+    for (const r of reps) if (Math.abs(r - v) < Math.abs(best - v)) best = r;
+    return best * factor;
+  };
+}
+
+/**
+ * Regions stretched by `sx` horizontally and `sy` vertically: their rectangles on the
+ * Plan and their Layout by the same factors, so touching Regions keep touching. Factors
+ * of 1 leave everything exactly in place.
+ */
+export function stretchRegions(regions: readonly Region[], sx: number, sy: number): Region[] {
+  const out = regions.map(copy);
+  for (const [ax, f] of [["x", sx], ["y", sy]] as const) {
+    if (f === 1) continue;
+    const size = ax === "x" ? "width" : "height";
+    const map = edgeMap(regions.flatMap((r) => [lo(r, ax), hi(r, ax)]), f);
+    for (const r of out) {
+      const a = map(r.at[ax]);
+      const b = map(r.at[ax] + r[size]);
+      r.at[ax] = a;
+      r[size] = b - a;
+      r[ax] = r[ax] * f;
+    }
+  }
+  return out;
+}
+
 /** What the exports take: one rectangle (a one-Region Clip) or Regions with their Layout. */
 export type ClipShape = ClipMm | readonly Region[];
 

@@ -83,14 +83,17 @@ test("multi-page Document: page picker, page switching, exports of the chosen pa
   expect(pdf.text).toContain("SEITE ZWEI");
   await page.screenshot({ path: "test-results/multipage.png" });
 
-  // ▶: page 3; the Clip fits, so it is kept.
+  // ▶: page 3, smaller: the Clip is stretched to it with a note (ADR 0007).
   await page.locator("#page-next").click();
   await expect(page.locator("#page-pick")).toHaveText("Seite 3 von 3");
   await expect(page.locator("#plan-info")).toContainText("297 × 210 mm", { timeout: 60_000 });
   await expect(page.locator("#busy")).toBeHidden(); // the busy window (ADR 0012) blocks input until gone
   await expect(page.locator("#page-next")).toBeDisabled();
   await expect(page.locator("#page-prev")).toBeEnabled();
-  expect(await page.locator("#clip-w").inputValue()).toBe("150.0");
+  expect(await page.locator("#clip-w").inputValue()).toBe("106.1"); // 150 × 297 / 420
+  await expect(page.locator("#stretch-text")).toHaveText(
+    "Bereiche an die Plangröße angepasst: horizontal um −29,3 % gestaucht, vertikal um −29,3 % gestaucht. Bitte prüfen.",
+  );
 
   // Reopen the picker from step 1: the current page is marked; Escape keeps it.
   await page.locator("#page-pick").click();
@@ -115,17 +118,18 @@ test("multi-page Document: page picker, page switching, exports of the chosen pa
   expect(svg).toContain("EINS");
   expect(svg).not.toContain("ZWEI");
 
-  // A Clip that does not fit the new page is reset to the default.
+  // A Clip wider than the new page is stretched to it, no longer reset (ADR 0007).
   await page.locator("#page-next").click();
   await expect(page.locator("#page-pick")).toHaveText("Seite 2 von 3");
   await expect(page.locator("#plan-info")).toContainText("420 × 297 mm", { timeout: 60_000 });
   await expect(page.locator("#busy")).toBeHidden(); // the busy window (ADR 0012) blocks input until gone
   await page.locator("#clip-x").fill("0");
   await page.locator("#clip-w").fill("400");
-  await page.locator("#page-next").click(); // page 3 is 297 mm wide: reset to its full width
+  await page.locator("#page-next").click(); // page 3 is 297 mm wide
   await expect(page.locator("#plan-info")).toContainText("297 × 210 mm", { timeout: 60_000 });
   await expect(page.locator("#busy")).toBeHidden(); // the busy window (ADR 0012) blocks input until gone
-  expect(await page.locator("#clip-w").inputValue()).toBe("297.0");
+  expect(await page.locator("#clip-w").inputValue()).toBe("282.9"); // 400 × 297 / 420
+  await expect(page.locator("#stretch-note")).toBeVisible();
 
   // A single-page file opens straight away, without page controls or page in the name.
   await page.locator("#file").setInputFiles(single);

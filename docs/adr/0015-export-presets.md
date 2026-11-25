@@ -61,3 +61,27 @@ loading one kind never changes the other (the Clip belongs to the Plan, a Preset
 output device). Same window and actions as Presets (save, overwrite, rename, delete,
 JSON export/import with numbered clashes, validated). On a Plan of another size the
 Regions are stretched to fit, with a warning (ADR 0007).
+
+## Built: Clip presets (2026-11-25, #38)
+
+- **Step 2** starts with "Vorlage: [▾] [✎]" like step 3. With nothing picked the dropdown
+  shows "–". Picking a Clip preset replaces all Regions (fitted to the Plan, ADR 0007),
+  selects Region 1 and keeps the mode. Editing a Region afterwards shows "Name
+  (geändert)"; a Clip counts as unchanged while its Regions equal the preset's fitted to
+  this Plan (same order, within 0.1 µm), so a stretched preset is not "changed". Picking
+  the entry already in effect does nothing.
+- **Window** "Ausschnitt-Vorlagen": the same actions as the Preset window. Saving needs
+  at least one Region. No name is reserved (no factory entry). Kept under
+  `simplepdfclipper.clipPresets` with the one last picked.
+- **File format:** JSON `{ "kind": "simplepdfclipper-clip-presets", "version": 1,
+  "presets": [{ "name", "plan": { "widthMm", "heightMm" }, "regions": [{ "x", "y",
+  "width", "height", "at": { "x", "y" } }] }] }`, saved as
+  `simplepdfclipper-Ausschnitt-Vorlagen.json`. An entry without a name, a valid Plan
+  size or at least one valid Region is dropped; overlapping Regions get the suggested
+  Layout. A Presets file is refused, and the other way round.
+- **Code:** the dropdown and window are one `PresetMenu` (`src/ui/presetmenu.ts`)
+  driven by a `PresetKind` for each kind; `PresetsPanel` keeps the SVG options and
+  the export settings, the Clip presets are wired in `src/main.ts`. Pure logic in
+  `src/ui/clippresets.ts`; the name rules in `presets.ts` take the kind's noun and
+  reserved name.
+- Tests: `src/ui/clippresets.test.ts`, `e2e/clip-presets.spec.ts`.

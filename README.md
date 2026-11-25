@@ -42,6 +42,10 @@ double-click. No server, no upload, no installation.
 7. Setups you use often can be saved as named Presets ("Vorlage" in step 3, ✎ to
    save, rename, delete, and to export or import them as a JSON file for colleagues).
    Picking one sets all export settings at once; the Clip stays (ADR 0015).
+8. Regions you use on every version of a Plan can be saved as Clip presets ("Vorlage" in
+   step 2, ✎ for the same actions). The last Clip is restored when a Plan is opened.
+   On a Plan of another size both are stretched to fit, and a yellow note says by how
+   much: check the Regions then (ADR 0007, 0015).
 
 Scanned Plans (pages that are images) work too: the PDF, every Tile and the SVG embed
 only the part of the image inside the Clip, so a small Clip of a scan is a small file
@@ -69,7 +73,7 @@ is inside, otherwise the letter is removed (ADR 0005).
 - [x] Lines and shapes cut exactly at the Clip edge in every export (#35)
 - [x] Clips of several Regions, chosen on the Plan, exported as one page (#36)
 - [x] Arranging Regions freely in an "Anordnen" view (#37)
-- [ ] Clip presets, stretched to Plans of another size (#38)
+- [x] Clip presets, stretched to Plans of another size (#38)
 
 ## Development
 

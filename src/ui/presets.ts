@@ -99,31 +99,49 @@ export const cleanName = (name: string) => name.trim().replace(/\s+/g, " ");
 
 const sameName = (a: string, b: string) => a.localeCompare(b, "de", { sensitivity: "accent" }) === 0;
 
-/** Why `name` can't be used (German, for the UI), or undefined if it can. `except` is the Preset being renamed. */
-export function nameProblem(name: string, presets: readonly Preset[], except?: string): string | undefined {
+/** Anything with a name: a Preset or a Clip preset. */
+export interface Named {
+  name: string;
+}
+
+/** How names of one kind of preset are checked: what it is called (German), and the name the factory entry takes. */
+export interface NameRules {
+  noun: string;
+  reserved?: string;
+}
+
+/** Names of Presets: "Standard" is the factory settings. */
+export const PRESET_NAMES: NameRules = { noun: "Vorlage", reserved: STANDARD };
+
+/** Why `name` can't be used (German, for the UI), or undefined if it can. `except` is the one being renamed. */
+export function nameProblem(name: string, presets: readonly Named[], except?: string, rules: NameRules = PRESET_NAMES): string | undefined {
   const n = cleanName(name);
   if (!n) return "Bitte einen Namen eingeben.";
-  if (sameName(n, STANDARD)) return `„${STANDARD}“ ist die Werkseinstellung; bitte einen anderen Namen wählen.`;
-  if (presets.some((p) => sameName(p.name, n) && p.name !== except)) return `Es gibt schon eine Vorlage „${n}“.`;
+  if (rules.reserved && sameName(n, rules.reserved)) return `„${rules.reserved}“ ist die Werkseinstellung; bitte einen anderen Namen wählen.`;
+  if (presets.some((p) => sameName(p.name, n) && p.name !== except)) return `Es gibt schon eine ${rules.noun} „${n}“.`;
   return undefined;
 }
 
 /** `name`, or "name (2)", "name (3)", … whichever is still free. */
-export function uniqueName(name: string, presets: readonly Preset[]): string {
-  const base = cleanName(name) || "Vorlage";
-  if (!nameProblem(base, presets)) return base;
+export function uniqueName(name: string, presets: readonly Named[], rules: NameRules = PRESET_NAMES): string {
+  const base = cleanName(name) || rules.noun;
+  if (!nameProblem(base, presets, undefined, rules)) return base;
   for (let i = 2; ; i++) {
     const candidate = `${base} (${i})`;
-    if (!nameProblem(candidate, presets)) return candidate;
+    if (!nameProblem(candidate, presets, undefined, rules)) return candidate;
   }
 }
 
-/** Imported Presets added to the existing ones; a name clash comes in renamed, never overwrites. */
-export function importPresets(existing: readonly Preset[], incoming: readonly Preset[]): { presets: Preset[]; added: Preset[] } {
+/** Imported presets added to the existing ones; a name clash comes in renamed, never overwrites. */
+export function importPresets<P extends Named>(
+  existing: readonly P[],
+  incoming: readonly P[],
+  rules: NameRules = PRESET_NAMES,
+): { presets: P[]; added: P[] } {
   const presets = [...existing];
-  const added: Preset[] = [];
+  const added: P[] = [];
   for (const p of incoming) {
-    const q = { name: uniqueName(p.name, presets), settings: p.settings };
+    const q = { ...p, name: uniqueName(p.name, presets, rules) };
     presets.push(q);
     added.push(q);
   }

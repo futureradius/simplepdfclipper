@@ -47,8 +47,15 @@ _Avoid_: montage, composition
 
 **Clip preset**
 A named, saved set of Regions with their Layout, kept in the browser and shareable as a
-file. On a Plan of another size it is stretched to fit. UI: "Ausschnitt-Vorlage".
+file, together with the size of the Plan it was made on. On a Plan of another size it
+is stretched to fit (see **Stretching**). UI: "Ausschnitt-Vorlage".
 _Avoid_: Preset (that is export settings only)
+
+**Stretching**
+Fitting saved Regions (the remembered Clip or a Clip preset) to a Plan of another size:
+Plan rectangles and Layout scaled by the width and height ratios separately, touching
+Regions kept touching. A yellow note in step 2 says by how much (ADR 0007).
+_Avoid_: scaling (Regions are never scaled in the Layout)
 
 **Snap**
 While dragging a Region edge, the edge jumps to a nearby **Snap target**. Can be turned
