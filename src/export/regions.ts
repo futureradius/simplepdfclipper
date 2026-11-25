@@ -94,13 +94,56 @@ export function suggestLayout(regions: readonly Region[]): Region[] {
   return area(side) < area(stacked) - EPS ? side : stacked;
 }
 
+/** How far apart two rectangles lie on the Plan (0 if they touch or overlap). */
+function planGap(a: ClipMm, b: ClipMm): number {
+  const dx = Math.max(0, a.x - (b.x + b.width), b.x - (a.x + a.width));
+  const dy = Math.max(0, a.y - (b.y + b.height), b.y - (a.y + a.height));
+  return Math.hypot(dx, dy);
+}
+
 /**
- * Places a new Region beside the existing Layout, which stays: below it or to its
- * right, keeping its Plan offset in the other direction (from the leftmost or topmost
- * Region, never before the Clip's start). The smaller Clip wins, a tie goes below.
+ * Places a new Region in the existing Layout, which stays, where it lies on the Plan
+ * (ADR 0016): on the same side of the Region closest to it on the Plan, touching it,
+ * with its offset along that Region kept. Separated on both axes, it touches it at that
+ * corner. If that place is taken it moves on, away from that Region, until it is free.
+ * The result may lie before the Clip's start: normalise the Layout afterwards.
+ * A Region overlapping its closest one on the Plan goes beside the Layout instead.
  */
 export function placeNew(existing: readonly Region[], rect: ClipMm): Region {
   if (existing.length === 0) return { ...rect, at: { x: 0, y: 0 } };
+  let near = existing[0]!;
+  for (const o of existing) if (planGap(o, rect) < planGap(near, rect) - EPS) near = o;
+  const at = { x: 0, y: 0 };
+  let away: { ax: Axis; dir: number; gap: number } | undefined;
+  for (const ax of ["x", "y"] as const) {
+    const size = ax === "x" ? "width" : "height";
+    const after = rect[ax] - (near[ax] + near[size]);
+    const before = near[ax] - (rect[ax] + rect[size]);
+    if (after >= -EPS) at[ax] = near.at[ax] + near[size];
+    else if (before >= -EPS) at[ax] = near.at[ax] - rect[size];
+    else at[ax] = near.at[ax] + rect[ax] - near[ax];
+    const gap = Math.max(after, before);
+    if (gap >= -EPS && (!away || gap > away.gap)) away = { ax, dir: after >= -EPS ? 1 : -1, gap };
+  }
+  if (!away) return beside(existing, rect);
+  const r: Region = { ...rect, at };
+  for (let hit = true; hit; ) {
+    hit = false;
+    for (const o of existing) {
+      if (!overlap(placed(r), placed(o))) continue;
+      r.at[away.ax] = away.dir > 0 ? hi(o, away.ax) : lo(o, away.ax) - len(r, away.ax);
+      hit = true;
+    }
+  }
+  return r;
+}
+
+/**
+ * A new Region beside the existing Layout: below it or to its right, keeping its Plan
+ * offset in the other direction (from the leftmost or topmost Region, never before the
+ * Clip's start). The smaller Clip wins, a tie goes below.
+ */
+function beside(existing: readonly Region[], rect: ClipMm): Region {
   const size = clipSize(existing);
   const minX = Math.min(...existing.map((r) => r.x));
   const minY = Math.min(...existing.map((r) => r.y));
@@ -121,6 +164,17 @@ export function normaliseLayout(regions: readonly Region[]): Region[] {
   const { x: dx, y: dy } = layoutOffset(regions);
   if (Math.abs(dx) < EPS && Math.abs(dy) < EPS) return [...regions];
   return regions.map((r) => ({ ...r, at: { x: r.at.x - dx, y: r.at.y - dy } }));
+}
+
+/**
+ * Moves Region `from` to position `to` in the list (its number), shifting the ones in
+ * between. Only the numbering changes; Plan rectangles and Layout stay.
+ */
+export function reorderRegion(regions: readonly Region[], from: number, to: number): Region[] {
+  const out = [...regions];
+  const [r] = out.splice(from, 1);
+  out.splice(Math.max(0, Math.min(to, out.length)), 0, r!);
+  return out;
 }
 
 /** Removes Region `index`; the others keep their places, shifted so the Clip starts at (0, 0). */

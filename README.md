@@ -24,6 +24,9 @@ double-click. No server, no upload, no installation.
    or × removes it. Pan with the right or middle button, or Space + left drag. The view
    starts with the whole Plan; the minimap in the bottom-right corner moves the view
    (keys: `1` whole Plan, `2` Plan width, `3` 1:1, `F` selected Region).
+   A new Region is put in the Clip where it lies on the Plan, next to the Region closest
+   to it (a header drawn later still goes on top). Drag "Bereich n" in the list to
+   renumber the Regions.
    With two or more Regions, "Anordnen" (`A`; back with `B`) shows the Clip as it will
    be exported: drag a Region to place it (it snaps to the others' edges and stops at
    them; dragging past the left or top edge grows the Clip), or type its place.
