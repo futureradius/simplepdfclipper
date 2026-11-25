@@ -1,6 +1,6 @@
 // The Tiled Export controls in step 3 (ADR 0013): Paper format or free Tile grid,
-// Margin, output mode, and a summary of the resulting Sheets. The owner stores the
-// settings and applies Presets (ADR 0007, 0015).
+// Margin, output mode, and a summary of the resulting Tiles (with a hint that SVG Tiles
+// have no Margin). The owner stores the settings and applies Presets (ADR 0007, 0015).
 //
 // Free grid, per axis: two linked fields (count ⇄ length). The field edited last
 // leads and keeps its value when the Clip changes; the other one shows the result
@@ -147,6 +147,7 @@ export class TilesPanel {
     for (const el of document.querySelectorAll<HTMLElement>("[data-custom]")) el.hidden = s.format !== "custom";
     $("tiles-margin-hint").hidden = s.marginMm >= 2;
 
+    $("tiles-svg-hint").hidden = true;
     if (!s.enabled || this.clip.width <= 0) {
       this.grid = undefined;
       return;
@@ -162,11 +163,12 @@ export class TilesPanel {
 
     const n = sheetCount(g);
     const lines: HTMLElement[] = [];
-    const head = `${g.columns.length} Spalte${g.columns.length === 1 ? "" : "n"} × ${g.rows.length} Zeile${g.rows.length === 1 ? "" : "n"} = ${n.toLocaleString("de-DE")} ${n === 1 ? "Blatt" : "Blätter"}`;
+    const head = `${g.columns.length} Spalte${g.columns.length === 1 ? "" : "n"} × ${g.rows.length} Zeile${g.rows.length === 1 ? "" : "n"} = ${n.toLocaleString("de-DE")} ${n === 1 ? "Kachel" : "Kacheln"}`;
     if (g.orientation) {
       const [w, h] = paperSize(s, g.orientation);
       const name = s.format === "custom" ? "Eigenes Format" : s.format;
       lines.push(p(`${head}`), p(`${name} ${g.orientation === "portrait" ? "hoch" : "quer"} (${de(w)} × ${de(h)} mm)`, "muted"));
+      this.showSvgHint(name, g.orientation, w, h, g.marginMm);
     } else {
       const ws = [...new Set(g.sheetWidths.map((v) => Math.round(v * 10)))];
       const hs = [...new Set(g.sheetHeights.map((v) => Math.round(v * 10)))];
@@ -174,8 +176,23 @@ export class TilesPanel {
       lines.push(p(head), p(ws.length === 1 && hs.length === 1 ? `Blatt ${size}` : `Blätter bis ${size}; die letzte Spalte/Zeile ist kleiner`, "muted"));
     }
     for (const h of g.hints) lines.push(p(h, "warn"));
-    if (n > MANY_SHEETS) lines.push(p(`Viele Blätter (${n.toLocaleString("de-DE")}). Der Export ist trotzdem möglich, kann aber dauern.`, "warn"));
+    if (n > MANY_SHEETS) lines.push(p(`Viele Kacheln (${n.toLocaleString("de-DE")}). Der Export ist trotzdem möglich, kann aber dauern.`, "warn"));
     summary.replaceChildren(...lines);
+  }
+
+  /**
+   * SVG Tiles are bare (no Margin), but in Paper format the Margin still shapes the grid:
+   * say what an SVG Tile then holds (ADR 0013, #46).
+   */
+  private showSvgHint(name: string, orientation: "portrait" | "landscape", w: number, h: number, margin: number): void {
+    const hint = $("tiles-svg-hint");
+    hint.hidden = !(margin > 0);
+    if (hint.hidden) return;
+    const format = `${name}${orientation === "landscape" ? " quer" : ""}`;
+    hint.textContent =
+      `SVG-Kacheln haben keinen Rand. Es wird nur der Inhalt des Blattes exportiert ` +
+      `(bei ${format} und ${de(margin)} mm: ${de(w - 2 * margin)} × ${de(h - 2 * margin)} mm). ` +
+      `Für Kacheln in voller Blattgröße den Rand auf 0 setzen.`;
   }
 
   /** Linked fields: the leading one keeps the user's value, the other shows the result. */

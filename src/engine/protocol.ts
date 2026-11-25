@@ -72,6 +72,18 @@ export interface SvgExportResult {
   seconds: number;
 }
 
+/** SVG Tiled Export (ADR 0013): one batch of Tiles, all from one pass over the page. */
+export interface SvgTilesRequest extends SvgExportRequest {
+  /** Tiles of the Clip (mm, from the Clip's top-left corner). */
+  tiles: { x: number; y: number; width: number; height: number }[];
+}
+
+export interface SvgTilesResult {
+  /** One per Tile, in order; null for an empty Tile (skipped). */
+  tiles: ({ svg: Uint8Array; elements: number; unsupported: Record<string, number> } | null)[];
+  seconds: number;
+}
+
 export interface PdfExportRequest {
   /** The Clip: a rectangle, or Regions with their Layout (ADR 0016). */
   clip: ClipShape;
@@ -109,6 +121,7 @@ export type Request =
   | { id: number; op: "renderRegion"; region: RegionRequest }
   | { id: number; op: "snapTargets" }
   | { id: number; op: "exportSvg"; options: SvgExportRequest }
+  | { id: number; op: "exportSvgTiles"; options: SvgTilesRequest }
   | { id: number; op: "exportPdf"; options: PdfExportRequest }
   | { id: number; op: "tilesBegin"; job: TilesBeginRequest }
   | { id: number; op: "tile"; tile: Tile }

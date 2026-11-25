@@ -14,6 +14,8 @@ import type {
   RequestBody,
   Response,
   SvgExportRequest,
+  SvgTilesRequest,
+  SvgTilesResult,
   SvgExportResult,
   ThumbnailRequest,
   TileResult,
@@ -35,6 +37,7 @@ export interface Engine {
   renderRegion(region: RegionRequest): Promise<RegionResult>;
   snapTargets(): Promise<SnapIndex>;
   exportSvg(options: SvgExportRequest): Promise<SvgExportResult>;
+  exportSvgTiles(options: SvgTilesRequest): Promise<SvgTilesResult>;
   exportPdf(options: PdfExportRequest): Promise<PdfExportResult>;
   tilesBegin(job: TilesBeginRequest): Promise<void>;
   tile(tile: Tile): Promise<TileResult>;
@@ -109,6 +112,7 @@ function workerEngine(wasm: ArrayBuffer, timeoutMs: number): Promise<Engine> {
           renderRegion: (region) => call<RegionResult>({ op: "renderRegion", region }),
           snapTargets: () => call<SnapIndex>({ op: "snapTargets" }),
           exportSvg: (options) => call<SvgExportResult>({ op: "exportSvg", options }),
+          exportSvgTiles: (options) => call<SvgTilesResult>({ op: "exportSvgTiles", options }),
           exportPdf: (options) => call<PdfExportResult>({ op: "exportPdf", options }),
           tilesBegin: (job) => call<void>({ op: "tilesBegin", job }),
           tile: (tile) => call<TileResult>({ op: "tile", tile }),
@@ -138,6 +142,7 @@ async function mainThreadEngine(wasm: ArrayBuffer): Promise<Engine> {
     renderRegion: async (region) => core.renderRegion(region),
     snapTargets: async () => core.snapTargets(),
     exportSvg: async (options) => core.exportSvg(options),
+    exportSvgTiles: async (options) => core.exportSvgTiles(options),
     exportPdf: async (options) => core.exportPdf(options),
     tilesBegin: async (job) => core.tilesBegin(job),
     tile: async (tile) => core.tile(tile),

@@ -771,23 +771,21 @@ const pdfButton = $<HTMLButtonElement>("export-pdf");
 const status = $("export-status");
 let busy = false;
 
-/** SVG is not available while tiling (ADR 0013); nothing runs twice at once. */
+/** Both formats export Tiles while tiling (ADR 0013); nothing runs twice at once. */
 function updateButtons(): void {
   const tiling = tilesPanel.settings.enabled;
   // The last Region can be removed: then there is nothing to export (ADR 0016).
   const none = regions.length === 0;
-  exportButton.disabled = busy || loading || tiling || none;
-  pdfButton.disabled = busy || loading || (tiling && !currentGrid()) || none;
+  const noGrid = tiling && !currentGrid();
+  exportButton.disabled = busy || loading || noGrid || none;
+  pdfButton.disabled = busy || loading || noGrid || none;
   $("export-hint").hidden = !none;
-  const why = none ? "Ziehe auf dem Plan einen Bereich auf." : tiling ? "SVG-Export ist beim Aufteilen auf Blätter nicht verfügbar." : "";
-  pdfButton.title = none ? why : "";
+  const why = none ? "Ziehe auf dem Plan einen Bereich auf." : "";
+  pdfButton.title = why;
   $("svg-wrap").title = why;
   exportButton.title = why;
-  $("svg-note").hidden = !tiling;
-  pdfButton.textContent = tiling ? "Kacheln exportieren" : "PDF exportieren";
-  exportButton.classList.toggle("primary", !tiling);
-  pdfButton.classList.toggle("primary", tiling);
-  pdfButton.parentElement!.classList.toggle("tiling", tiling);
+  exportButton.textContent = tiling ? "SVG-Kacheln exportieren" : "SVG exportieren";
+  pdfButton.textContent = tiling ? "PDF-Kacheln exportieren" : "PDF exportieren";
   updatePager();
 }
 updateButtons();
@@ -801,6 +799,7 @@ function note(text: string, cls = ""): void {
 
 exportButton.addEventListener("click", async () => {
   if (!plan) return;
+  if (tilesPanel.settings.enabled) return exportSvgTiles();
   const { mergeMode, textAsPaths } = presets.current().svg;
   // Ask where to save first: the dialog needs the click, which a long export outlasts.
   const save = await chooseSaveTarget(`${exportBase(plan.name, plan.page, plan.pages.length)}.svg`, "SVG-Grafik", "image/svg+xml", ".svg");
@@ -819,18 +818,8 @@ exportButton.addEventListener("click", async () => {
       `SVG: ${de(size / MB, 2)} MB · ${r.elements.toLocaleString("de-DE")} Elemente ` +
         `(aus ${r.sourceItems.toLocaleString("de-DE")} PDF-Objekten) · ${de(r.seconds)} s`,
     );
-    if (size > WHITEBOARD_LIMIT) {
-      note(
-        "Achtung: größer als 45 MB. Gängige Whiteboard-Programme nehmen Dateien dieser Größe nicht an. " +
-          "Bitte den Ausschnitt verkleinern oder in mehrere Ausschnitte aufteilen.",
-        "severe",
-      );
-    } else if (size > WHITEBOARD_RECOMMENDED) {
-      note("Hinweis: größer als 2 MB. In Whiteboard-Programmen kann das Board dadurch träge werden.", "warn");
-    }
-    const unsupported = Object.entries(r.unsupported);
-    if (unsupported.length > 0)
-      note("Nicht vollständig übernommen: " + unsupported.map(([k, n]) => `${k} (${n}×)`).join(", "), "warn");
+    sizeWarning(size);
+    unsupportedNote(r.unsupported);
 
     const resultImg = $<HTMLImageElement>("result-img");
     URL.revokeObjectURL(resultImg.src);
@@ -846,6 +835,28 @@ exportButton.addEventListener("click", async () => {
     updateButtons();
   }
 });
+
+/**
+ * The whiteboard's limits (ADR 0009), for the SVG or, in a Tiled Export, its largest
+ * Tile (`tile`: its name, and whether it is the only one). Warns, never refuses.
+ */
+function sizeWarning(size: number, tile?: { name: string; only: boolean }): void {
+  const subject = tile ? `${tile.only ? "Die Kachel" : "Die größte Kachel"} ${tile.name} ist` : "Achtung:";
+  if (size > WHITEBOARD_LIMIT) {
+    note(
+      `${subject} größer als 45 MB. Gängige Whiteboard-Programme nehmen Dateien dieser Größe nicht an. ` +
+        (tile ? "Bitte kleinere Kacheln wählen." : "Bitte den Ausschnitt verkleinern oder in Kacheln aufteilen."),
+      "severe",
+    );
+  } else if (size > WHITEBOARD_RECOMMENDED) {
+    note(`${tile ? subject : "Hinweis:"} größer als 2 MB. In Whiteboard-Programmen kann das Board dadurch träge werden.`, "warn");
+  }
+}
+
+function unsupportedNote(unsupported: Record<string, number>): void {
+  const list = Object.entries(unsupported);
+  if (list.length > 0) note("Nicht vollständig übernommen: " + list.map(([k, n]) => `${k} (${n}×)`).join(", "), "warn");
+}
 
 /** A content stream the path cut could not read (ADR 0005, #35). */
 const UNCUT_HINT =
@@ -982,6 +993,128 @@ async function exportTiles(): Promise<void> {
     if (uncut > 0) note(UNCUT_HINT, "warn");
   } catch (e) {
     await engine.tilesAbort().catch(() => undefined);
+    void busyWindow.end();
+    status.textContent = `Kachel-Export fehlgeschlagen: ${String(e)}`;
+  } finally {
+    busy = false;
+    updateButtons();
+  }
+}
+
+/**
+ * Tiles per engine call of the SVG Tiled Export. They share one pass over the page, and
+ * a pass costs about the same however many Tiles it serves (Test Plan: ~2.5 s for a
+ * 2 m Clip, ~4.5 s for the whole 14 m Plan, plus ~0.03 s per Tile). 294 A4 Tiles of the
+ * whole Plan: 18.8 s in one call, 20.6 s in calls of 100 (progress and "Abbrechen" about
+ * every 7 s), 34.5 s in calls of 50.
+ */
+const SVG_TILE_BATCH = 100;
+
+// SVG Tiled Export (ADR 0013, #46): one bare SVG per Tile for the whiteboard, empty Tiles skipped.
+async function exportSvgTiles(): Promise<void> {
+  const g = currentGrid();
+  if (!plan || !g) return;
+  const { mergeMode, textAsPaths } = presets.current().svg;
+  const oneFile = tilesPanel.settings.output === "multipage";
+  const list = tiles(g);
+  const base = exportBase(plan.name, plan.page, plan.pages.length);
+
+  // Ask where to save first: the dialogs need the click that started the export.
+  let folder: DirectoryHandle | undefined;
+  let writeZip: ((blob: Blob) => Promise<void>) | undefined;
+  if (oneFile) {
+    const w = await chooseSaveTarget(`${base}_Kacheln.zip`, "ZIP-Archiv", "application/zip", ".zip");
+    if (!w) return;
+    writeZip = w;
+  } else {
+    const f = await chooseFolder();
+    if (f === null) return; // cancelled
+    folder = f; // undefined: no folder picker, the Tiles go into a ZIP download
+  }
+
+  busy = true;
+  updateButtons();
+  $("result-img").hidden = true;
+  status.replaceChildren();
+  let cancelled = false;
+  await busyWindow.start("SVG-Kacheln werden berechnet…", { button: exportButton, cancel: () => (cancelled = true) });
+
+  const t0 = performance.now();
+  const zipped: ZipEntry[] = [];
+  const unsupported: Record<string, number> = {};
+  let largest: { name: string; size: number; elements: number } | undefined;
+  let bytes = 0;
+  let done = 0;
+  let saved = 0;
+  try {
+    const clip = normaliseLayout(regions);
+    for (let i = 0; i < list.length && !cancelled; i += SVG_TILE_BATCH) {
+      const batch = list.slice(i, i + SVG_TILE_BATCH);
+      busyWindow.text(
+        batch.length === list.length
+          ? `${list.length.toLocaleString("de-DE")} Kacheln werden berechnet…`
+          : `Kacheln ${done + 1}–${done + batch.length} von ${list.length}…`,
+      );
+      busyWindow.progress(done, list.length);
+      const r = await engine.exportSvgTiles({
+        clip,
+        page: plan.page,
+        mergeMode,
+        textAsPaths,
+        reuseShapes: false,
+        tiles: batch.map((t) => ({ x: t.x, y: t.y, width: t.width, height: t.height })),
+      });
+      for (const [k, t] of batch.entries()) {
+        const svg = r.tiles[k];
+        if (!svg) continue; // empty Tile: skipped, the names keep the grid
+        const name = `${base}_Kachel_${t.name}.svg`;
+        bytes += svg.svg.length;
+        if (!largest || svg.svg.length > largest.size) largest = { name: t.name, size: svg.svg.length, elements: svg.elements };
+        for (const [what, n] of Object.entries(svg.unsupported)) unsupported[what] = (unsupported[what] ?? 0) + n;
+        if (folder) await writeToFolder(folder, name, new Blob([svg.svg as BlobPart], { type: "image/svg+xml" }));
+        else zipped.push({ name, data: svg.svg });
+        saved++;
+      }
+      done += batch.length;
+    }
+    if (cancelled) {
+      void busyWindow.end();
+      note(
+        folder && saved > 0
+          ? `Abgebrochen. ${saved} Kacheln wurden in den Ordner „${folder.name}“ geschrieben.`
+          : "Abgebrochen. Es wurde nichts gespeichert.",
+        "warn",
+      );
+      return;
+    }
+    if (saved === 0) {
+      void busyWindow.end();
+      note("Alle Kacheln sind leer. Es wurde nichts gespeichert.", "warn");
+      return;
+    }
+    busyWindow.cancellable(false);
+    busyWindow.progress(done, list.length);
+    busyWindow.text("Wird gespeichert…");
+    const n = saved.toLocaleString("de-DE");
+    const empty = list.length - saved;
+    const skipped = empty > 0 ? `, ${empty.toLocaleString("de-DE")} leere übersprungen` : "";
+    const secs = `${de((performance.now() - t0) / 1000)} s`;
+    if (writeZip) {
+      await writeZip(zip(zipped));
+      note(`${n} SVG-Kacheln als ZIP-Datei gespeichert${skipped}: ${de(bytes / MB, 2)} MB · ${secs}`);
+    } else if (folder) {
+      note(`${n} SVG-Kacheln im Ordner „${folder.name}“ gespeichert${skipped}: ${de(bytes / MB, 2)} MB · ${secs}`);
+    } else {
+      download(zip(zipped), `${base}_Kacheln.zip`);
+      note(`${n} SVG-Kacheln als ZIP-Datei gespeichert (kein Ordner-Dialog verfügbar)${skipped}: ${de(bytes / MB, 2)} MB · ${secs}`);
+    }
+    void busyWindow.end();
+    if (largest && saved > 1)
+      note(`Größte Kachel ${largest.name}: ${de(largest.size / MB, 2)} MB · ${largest.elements.toLocaleString("de-DE")} Elemente`, "muted");
+    if (largest) sizeWarning(largest.size, { name: largest.name, only: saved === 1 });
+    unsupportedNote(unsupported);
+    note("Inhalte außerhalb jeder Kachel entfernt. Die SVG-Kacheln haben keinen Rand: im Whiteboard Kante an Kante zusammensetzen.", "muted");
+  } catch (e) {
     void busyWindow.end();
     status.textContent = `Kachel-Export fehlgeschlagen: ${String(e)}`;
   } finally {
