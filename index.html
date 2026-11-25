@@ -157,7 +157,6 @@
       .fields:has(input:disabled) { opacity: 0.5; }
       .field .input:has(input[readonly]) { background: #f4f5f7; }
       .field input[readonly] { color: var(--muted); }
-      .fields-caption { margin: 0 0 6px; }
       .modes { display: grid; grid-template-columns: 1fr 1fr; margin: 0 0 12px; border: 1px solid var(--line-strong); border-radius: 7px; overflow: hidden; }
       .modes[hidden] { display: none; }
       .modes button { border: 0; background: #fff; padding: 6px 8px; font-size: 13px; cursor: pointer; color: var(--text); }
@@ -431,7 +430,6 @@
           </div>
           <ul class="regions" id="regions" aria-label="Bereiche"></ul>
           <p class="no-region" id="no-region" hidden>Ziehe auf dem Plan einen Bereich auf. <a href="#about-howto" id="howto-link">Wie geht's?</a></p>
-          <div class="muted fields-caption" id="fields-caption"></div>
           <div class="fields">
             <div class="field"><label for="clip-x">Links</label><div class="input"><input id="clip-x" type="number" step="0.1" min="0" /><span class="unit">mm</span></div></div>
             <div class="field"><label for="clip-y">Oben</label><div class="input"><input id="clip-y" type="number" step="0.1" min="0" /><span class="unit">mm</span></div></div>

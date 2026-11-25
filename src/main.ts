@@ -229,7 +229,6 @@ function setRegions(next: Region[], sel: number | undefined, from: "fields" | "o
     if (!shown) input.value = "";
     else if (from !== "fields") input.value = fmt(shown[k]);
   }
-  $("fields-caption").textContent = cur ? `Bereich ${selected! + 1} ${mode === "plan" ? "auf dem Plan" : "im Ausschnitt"}` : "";
   viewer.setRegions(regions, selected, guides);
   minimap.setRegions(regions, selected);
   const size = planSize();
@@ -683,13 +682,12 @@ async function showPage(doc: { name: string; fileName: string; pages: PageSize[]
     // The Plan is usable meanwhile; only snapping waits, so a small inline spinner.
     snapStatus.textContent = "Einrasten wird vorbereitet…";
     snapStatus.classList.add("loading");
-    const t1 = performance.now();
     const targets = await engine.snapTargets();
     if (gen !== loadGeneration) return;
     snapIndex = targets;
-    const n = snapIndex.vertical.pos.length + snapIndex.horizontal.pos.length;
+    // Once ready nothing is shown: how many lines were found is no use to the user (#50 feedback).
     snapStatus.classList.remove("loading");
-    snapStatus.textContent = `${n.toLocaleString("de-DE")} Linien zum Einrasten gefunden (${de((performance.now() - t1) / 1000)} s).`;
+    snapStatus.textContent = "";
     document.body.dataset.snapReady = "1";
   } catch (e) {
     if (gen !== loadGeneration) return;

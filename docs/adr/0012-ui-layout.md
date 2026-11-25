@@ -145,6 +145,11 @@ user needs, and the About window was squeezed by one long shortcut.
   above the export buttons, shown only while Tiles are on: it belongs to the export.
 - **"Ganzer Ausschnitt" is hidden in "Anordnen":** it repeated "Ausschnitt" (`F`). Key
   `1` still shows the whole Clip there.
+- **No status lines that only repeat or count** (follow-up feedback): the caption
+  "Bereich n auf dem Plan / im Ausschnitt" above the fields is gone (the selected Region
+  is already highlighted in the list and the view, and the caption made the sidebar jump
+  on selection); snapping shows "Einrasten wird vorbereitet…" while it is not ready yet,
+  then nothing (no line count).
 - Start page texts shortened (several Ausschnitte, SVG "schlank und scharf", PDF
   "bereit zu drucken oder zur Ablage").
 - Code: `src/ui/sidebar.ts` (width rule and stored state unit-tested), e2e in

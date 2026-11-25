@@ -85,7 +85,6 @@ test("Regions are arranged in the Anordnen view and exported as arranged", async
   // "Ganzer Ausschnitt" would repeat "Ausschnitt" (F) here, so it is hidden; key 1 still works (#50).
   await expect(page.locator("#zoom-plan")).toBeHidden();
   await expect(page.locator("#zoom-width")).toHaveText("Ausschnittbreite");
-  await expect(page.locator("#fields-caption")).toHaveText("Bereich 1 im Ausschnitt");
   await expect(page.locator("#clip-w")).toHaveJSProperty("readOnly", true);
   await expect(page.locator("#clip-x")).toHaveJSProperty("readOnly", false);
   await expect(page.locator("#clip-size")).toContainText("60 × 60 mm");
@@ -298,7 +297,8 @@ test("a new Region goes where it lies on the Plan; the list is reordered by drag
 
   // In the Clip the header is above the body, keeping its offset: no dragging around needed.
   await page.locator("#mode-arrange").click();
-  await expect(page.locator("#fields-caption")).toHaveText("Bereich 2 im Ausschnitt");
+  await expect(page.locator("body")).toHaveAttribute("data-mode", "arrange");
+  await expect(page.locator("#regions li").nth(1)).toHaveClass(/selected/);
   near(await num(page, "#clip-x"), 0);
   near(await num(page, "#clip-y"), 0);
   await picks.nth(0).click();
@@ -317,7 +317,6 @@ test("a new Region goes where it lies on the Plan; the list is reordered by drag
   await expect(page.locator("#regions li.dragging")).toHaveCount(0);
   await expect(picks).toHaveText(["Bereich 1", "Bereich 2"]);
   await expect(page.locator("#regions li").nth(0)).toHaveClass(/selected/);
-  await expect(page.locator("#fields-caption")).toHaveText("Bereich 1 im Ausschnitt");
   near(await num(page, "#clip-x"), 0);
   near(await num(page, "#clip-y"), 0);
   const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("simplepdfclipper.lastRegions")!));
@@ -328,7 +327,8 @@ test("a new Region goes where it lies on the Plan; the list is reordered by drag
   // A click still selects; on the Plan Region 2 is the body now.
   await picks.nth(1).click();
   await page.locator("#mode-plan").click();
-  await expect(page.locator("#fields-caption")).toHaveText("Bereich 2 auf dem Plan");
+  await expect(page.locator("body")).toHaveAttribute("data-mode", "plan");
+  await expect(page.locator("#regions li").nth(1)).toHaveClass(/selected/);
   near(await num(page, "#clip-x"), 40);
   near(await num(page, "#clip-y"), 160);
   // A drag that ends where it started changes nothing.

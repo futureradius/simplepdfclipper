@@ -52,7 +52,7 @@ test("opens from file://, snaps the Clip in the precision view and exports an SV
   await expect(page.locator("#busy")).toBeHidden(); // the busy window (ADR 0012) blocks input until gone
   await expect(page.locator("#plan-details")).toContainText("UserUnit");
   await expect(page.locator("body")).toHaveAttribute("data-snap-ready", "1", { timeout: 60_000 });
-  await expect(page.locator("#snap-status")).toContainText("Linien zum Einrasten");
+  await expect(page.locator("#snap-status")).toBeEmpty(); // no line count once ready (#50 feedback)
 
   // Start view: the whole Plan (ADR 0012); the minimap would only repeat it, so it is hidden.
   const view = (await page.locator("#viewer-canvas").boundingBox())!;
