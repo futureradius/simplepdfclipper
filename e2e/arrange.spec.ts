@@ -1,12 +1,15 @@
 // The "Anordnen" view (ADR 0016): the Clip as exported, Regions moved in it with
 // snapping, stopping at each other, growing the Clip past its start; exported as
-// arranged in PDF, SVG and the Tiled Export (with an empty Sheet). A new Region is
+// arranged in PDF, SVG and the Tiled Export (with an empty Sheet; as SVG Tiles in one
+// ZIP, the empty Tile skipped). A new Region is
 // placed where it lies on the Plan; the Region list is reordered by dragging.
 
 import { test, expect, type Page } from "@playwright/test";
 import { pathToFileURL } from "node:url";
-import { resolve } from "node:path";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import * as mupdf from "mupdf";
 
 const APP = pathToFileURL(resolve("dist/index.html")).href;
@@ -174,7 +177,7 @@ test("Regions are arranged in the Anordnen view and exported as arranged", async
   await page.locator("label:has(input[value=free]) span").click();
   await page.locator("#tiles-col-w").fill("25");
   await page.locator("#tiles-row-h").fill("35");
-  await expect(page.locator("#tiles-summary")).toContainText("4 Spalten × 2 Zeilen = 8 Blätter");
+  await expect(page.locator("#tiles-summary")).toContainText("4 Spalten × 2 Zeilen = 8 Kacheln");
   await page.screenshot({ path: "test-results/arrange-tiles.png" });
   await page.locator("input[name=tiles-output][value=multipage]").check();
   const book = page.waitForEvent("download", { timeout: 120_000 });
@@ -187,6 +190,32 @@ test("Regions are arranged in the Anordnen view and exported as arranged", async
   expect(all).toMatch(/ALPH/); // the words are cut between Tiles
   expect(all).toMatch(/BET/);
   expect(all).not.toContain("ZWISCHEN");
+
+  // The same Tiles as SVG, all in one ZIP ("Eine Datei"): bare Tiles, the empty A1 skipped.
+  const svgZip = page.waitForEvent("download", { timeout: 120_000 });
+  await page.locator("#export-svg").click();
+  const svgZipFile = await svgZip;
+  expect(svgZipFile.suggestedFilename()).toMatch(/_Ausschnitt_Kacheln\.zip$/);
+  await expect(page.locator("#export-status")).toContainText("SVG-Kacheln als ZIP-Datei gespeichert");
+  const unzipped = mkdtempSync(join(tmpdir(), "svg-tiles-"));
+  const tar = process.platform === "win32" ? join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe") : "tar";
+  execFileSync(tar, ["-xf", await svgZipFile.path(), "-C", unzipped]);
+  const names = readdirSync(unzipped).sort();
+  const tileName = (f: string) => /_Kachel_([A-Z]+\d+)\.svg$/.exec(f)?.[1];
+  expect(names.every((f) => tileName(f))).toBe(true);
+  expect(names.map(tileName)).not.toContain("A1");
+  const skipped = 8 - names.length;
+  expect(skipped).toBeGreaterThanOrEqual(1);
+  await expect(page.locator("#export-status")).toContainText(`${skipped} leere übersprungen`);
+  const svgText = names.map((f) => readFileSync(join(unzipped, f), "utf8"));
+  for (const [i, s] of svgText.entries()) {
+    const col = Number(/\d+$/.exec(tileName(names[i]!)!)![0]);
+    // Bare Tile: 25 × 35 mm, the last column 80 − 3 × 25 = 5 mm.
+    expect(s, names[i]).toContain(`width="${col === 4 ? 5 : 25}mm" height="35mm"`);
+  }
+  const svgAll = svgText.join(" ");
+  expect(svgAll).not.toContain("ZWISCHEN");
+  expect(svgAll).not.toMatch(/Zeile [A-Z] von/); // no Tile label
   await page.locator("#tiles-on").uncheck({ force: true });
 
   // Back to "Bereiche wählen"; with one Region left there is no "Anordnen".

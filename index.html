@@ -150,7 +150,6 @@
       #export-hint { margin: 0 0 8px; }
       kbd { font: 11px/1 ui-monospace, Consolas, monospace; padding: 2px 5px; border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 4px; background: #fafbfc; color: var(--text); }
       .export-buttons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-      .export-buttons.tiling { grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); }
       .export-buttons .btn { white-space: normal; text-align: center; line-height: 1.2; min-height: 34px; height: auto; padding: 6px 10px; }
       #export-status { margin-top: 10px; font-size: 13px; }
       #export-status p { margin: 6px 0; }
@@ -175,12 +174,11 @@
       .rest:empty { display: none; }
       #tiles-free { display: grid; gap: 10px; }
       .margin-row { grid-template-columns: 1fr 1fr; }
-      #tiles-margin-hint { margin: -4px 0 0; }
+      #tiles-margin-hint, #tiles-svg-hint { margin: -4px 0 0; }
       .output label { display: block; margin: 3px 0; }
       #tiles-summary { font-size: 13px; }
       #tiles-summary p { margin: 0; }
       #tiles-summary p + p { margin-top: 6px; }
-      #svg-note { margin: 6px 0 0; }
       #result-img { display: block; max-width: 100%; max-height: 180px; margin-top: 10px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
       details.advanced { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
       details.advanced summary { cursor: pointer; color: var(--muted); font-size: 13px; }
@@ -353,7 +351,7 @@
         <ul class="uses">
           <li><strong>SVG</strong>schlank und scharf, für Whiteboard-Programme</li>
           <li><strong>PDF</strong>für die Dokumentation; was außerhalb liegt, wird wirklich entfernt</li>
-          <li><strong>Auf Blätter aufgeteilt</strong>um große Ausschnitte in Originalgröße zu drucken</li>
+          <li><strong>In Kacheln aufgeteilt</strong>als PDF zum Drucken in Originalgröße, als SVG für riesige Ausschnitte im Whiteboard</li>
         </ul>
       </section>
       <div class="drop">
@@ -439,7 +437,7 @@
             <div class="input"><select id="preset"></select></div>
             <button class="btn" id="presets-open" title="Vorlagen verwalten" aria-label="Vorlagen verwalten">✎</button>
           </div>
-          <label class="switch tiles-switch"><input id="tiles-on" type="checkbox" /> Auf Blätter aufteilen (Kacheln)</label>
+          <label class="switch tiles-switch"><input id="tiles-on" type="checkbox" /> In Kacheln aufteilen</label>
           <div id="tiles-panel" hidden>
             <div class="seg" role="radiogroup" aria-label="Aufteilen nach">
               <label><input type="radio" name="tiles-mode" value="paper" /><span>Papierformat</span></label>
@@ -480,10 +478,11 @@
               <div class="field"><label for="tiles-margin">Rand</label><div class="input"><input id="tiles-margin" type="number" step="1" min="0" /><span class="unit">mm</span></div></div>
             </div>
             <p class="hint" id="tiles-margin-hint" hidden>Ohne Rand gibt es keine Schnittmarken und keine Beschriftung. Bürodrucker drucken nicht bis an die Blattkante; dort können Inhalte fehlen.</p>
+            <p class="hint" id="tiles-svg-hint" hidden></p>
             <div class="output" role="radiogroup" aria-label="Ausgabe">
               <div class="muted">Ausgabe</div>
               <label><input type="radio" name="tiles-output" value="files" /> Einzelne Dateien (in einen Ordner)</label>
-              <label><input type="radio" name="tiles-output" value="multipage" /> Eine mehrseitige PDF</label>
+              <label><input type="radio" name="tiles-output" value="multipage" /> Eine Datei (PDF mehrseitig, SVG als ZIP)</label>
             </div>
             <div id="tiles-summary"></div>
           </div>
@@ -492,7 +491,6 @@
             <span id="svg-wrap"><button class="btn primary" id="export-svg">SVG exportieren</button></span>
             <button class="btn" id="export-pdf">PDF exportieren</button>
           </div>
-          <p class="hint" id="svg-note" hidden>SVG-Export ist beim Aufteilen auf Blätter nicht verfügbar.</p>
           <div id="export-status"></div>
           <img id="result-img" alt="Vorschau des exportierten SVG" hidden />
 
@@ -611,7 +609,7 @@
       <div class="body">
         <h2>simple pdf clipper</h2>
         <div class="muted" id="version"></div>
-        <p>Schneidet einen genauen Ausschnitt aus großen Vektor-PDFs und speichert ihn als schlankes SVG oder als PDF, in dem alles außerhalb des Ausschnitts wirklich entfernt ist. Läuft vollständig lokal; der Plan verlässt diesen Computer nicht.</p>
+        <p>Schneidet einen genauen Ausschnitt aus großen Vektor-PDFs und speichert ihn als schlankes SVG oder als PDF, in dem alles außerhalb des Ausschnitts wirklich entfernt ist. Große Ausschnitte lassen sich in Kacheln aufteilen: als PDF zum Drucken in Originalgröße, als SVG-Dateien, die im Whiteboard Kante an Kante wieder zusammenpassen. Läuft vollständig lokal; der Plan verlässt diesen Computer nicht.</p>
         <h3>Tastenkürzel</h3>
         <table class="keys" id="shortcuts">
           <tr><td><kbd>B</kbd></td><td>Bereiche wählen: Bereiche auf dem Plan aufziehen und ändern</td></tr>

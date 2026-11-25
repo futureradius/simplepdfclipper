@@ -16,6 +16,8 @@ import type {
   RegionRequest,
   RegionResult,
   SvgExportRequest,
+  SvgTilesRequest,
+  SvgTilesResult,
   SvgExportResult,
   ThumbnailRequest,
   TileResult,
@@ -27,7 +29,7 @@ import { exportClipPdf as runPdfExport } from "../export/stitchpdf";
 import type { SnapIndex } from "../ui/snap";
 import { extractSnapTargets } from "./snaptargets";
 import type { Matrix } from "../export/geometry";
-import { exportSvg as runSvgExport } from "../export/index";
+import { exportSvg as runSvgExport, exportSvgTiles as runSvgTiles } from "../export/index";
 
 interface OpenDocument {
   doc: MuPDF.Document;
@@ -223,6 +225,22 @@ export function exportSvg(options: SvgExportRequest): SvgExportResult {
       unsupported: r.unsupported,
       seconds: (performance.now() - t0) / 1000,
     };
+  } finally {
+    page.destroy();
+  }
+}
+
+/** One batch of an SVG Tiled Export: one pass over the page for all its Tiles. */
+export function exportSvgTiles(options: SvgTilesRequest): SvgTilesResult {
+  checkPage(options.page);
+  const t0 = performance.now();
+  const page = plan().doc.loadPage(options.page);
+  try {
+    const enc = new TextEncoder();
+    const tiles = runSvgTiles(lib(), page, options, options.tiles).map((r) =>
+      r ? { svg: enc.encode(r.svg), elements: r.elements, unsupported: r.unsupported } : null,
+    );
+    return { tiles, seconds: (performance.now() - t0) / 1000 };
   } finally {
     page.destroy();
   }

@@ -22,6 +22,7 @@ Status: accepted (2026-11-03)
   page itself.
 
 Amended by ADR 0013 (Tiled Export): cut marks and a Tile label are added, inside the Margin only.
+In an SVG Tiled Export (#46) the size warning applies to each Tile file: the done note names the largest.
 
 Amended 2026-11-24 (issue #27): the "Save as" dialog opens **on the click, before** the
 SVG or PDF is computed, as in the Tiled Export. Edge allows the dialog only ~5 s after

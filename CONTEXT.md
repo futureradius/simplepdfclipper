@@ -68,24 +68,26 @@ borders, date column boundaries) that a Region edge can snap to.
 **Export**
 Writing the Clip to a file. Never rasterised: vectors and text stay vectors and text,
 images in the Plan are kept as images, cut to the Clip. Always 1:1. Either one page
-that is exactly the Clip (PDF and SVG), or a **Tiled Export** (PDF only). Content outside
+that is exactly the Clip (PDF and SVG), or a **Tiled Export** (PDF and SVG). Content outside
 the Clip (or outside the Tile) is actually removed, not just hidden.
 
 ### Tiled Export
 
 **Tiled Export**
-An Export that cuts the Clip into a grid of Tiles, one per Sheet, to be printed and
-assembled into the full Clip. PDF only.
+An Export that cuts the Clip into a grid of Tiles. As PDF, each Tile goes on its own
+Sheet, to be printed and assembled into the full Clip. As SVG, each Tile is its own bare
+file, to be put back together edge to edge in the whiteboard tool; empty Tiles are left out.
 _Avoid_: split pages, poster print, spreads
 
 **Tile**
-One rectangular piece of the Clip, printed at 1:1 on one Sheet. Neighbouring Tiles
-meet exactly, without repeating any content. Named by grid position: row letter,
+One rectangular piece of the Clip, at 1:1: printed on one Sheet (PDF) or a file of its
+own (SVG). Neighbouring Tiles meet exactly, without repeating any content. Named by grid position: row letter,
 column number (A1, A2, … B1).
 _Avoid_: spread, page (a page is the PDF's unit, a Tile is a piece of the Clip)
 
 **Sheet**
-The paper one Tile is printed on: the Tile plus the Margin around it.
+The paper one Tile is printed on: the Tile plus the Margin around it. PDF only; an SVG
+Tile has no Sheet.
 _Avoid_: spread, page
 
 **Tile grid**
@@ -96,7 +98,8 @@ freely, each axis on its own: by **count** (equal shares of the Clip) or by **le
 
 **Margin**
 The white border around the Tile on each Sheet. It holds no Plan content, only the
-Tile label. Cutting it off makes neighbouring Tiles fit together exactly.
+Tile label. Cutting it off makes neighbouring Tiles fit together exactly. SVG Tiles have
+none; in Paper format it still sets their size (the format minus the Margin).
 _Avoid_: edge, overlap (no content is repeated between Tiles)
 
 **Tile label**

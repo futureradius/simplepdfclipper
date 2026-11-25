@@ -59,6 +59,11 @@ scope.onmessage = async (ev: MessageEvent<Request>) => {
       case "tilesAbort":
         result = core.tilesAbort();
         break;
+      case "exportSvgTiles": {
+        const r = core.exportSvgTiles(req.options);
+        scope.postMessage({ id: req.id, ok: true, result: r } satisfies Response, r.tiles.flatMap((t) => (t ? [t.svg.buffer] : [])));
+        return;
+      }
       case "exportSvg": {
         const r = core.exportSvg(req.options);
         scope.postMessage({ id: req.id, ok: true, result: r } satisfies Response, [r.svg.buffer]);

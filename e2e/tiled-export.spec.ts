@@ -74,18 +74,27 @@ test("Tiled Export: settings, grid preview, folder, multipage, ZIP fallback, can
   await openPlan(page);
   await setClip(page, 0, 2000, 1188.9, 600);
 
-  // Switching on: SVG unavailable with a visible reason, PDF button becomes the Tiles button.
+  // Switching on: both buttons export Tiles (SVG for the whiteboard since #46).
   await expect(page.locator("#tiles-panel")).toBeHidden();
+  await expect(page.locator("label.tiles-switch")).toHaveText("In Kacheln aufteilen");
   await page.locator("#tiles-on").check({ force: true });
   await expect(page.locator("#tiles-panel")).toBeVisible();
-  await expect(page.locator("#export-svg")).toBeDisabled();
-  await expect(page.locator("#svg-note")).toBeVisible();
-  await expect(page.locator("#svg-wrap")).toHaveAttribute("title", /nicht verfügbar/);
-  await expect(page.locator("#export-pdf")).toHaveText("Kacheln exportieren");
+  await expect(page.locator("#export-svg")).toBeEnabled();
+  await expect(page.locator("#export-svg")).toHaveText("SVG-Kacheln exportieren");
+  await expect(page.locator("#export-pdf")).toHaveText("PDF-Kacheln exportieren");
 
   // Default: A4, automatic orientation -> landscape needs fewer Sheets (5 × 4 = 20).
-  await expect(page.locator("#tiles-summary")).toContainText("5 Spalten × 4 Zeilen = 20 Blätter");
+  await expect(page.locator("#tiles-summary")).toContainText("5 Spalten × 4 Zeilen = 20 Kacheln");
   await expect(page.locator("#tiles-summary")).toContainText("A4 quer (297 × 210 mm)");
+  // SVG Tiles are bare: the hint says what an A4 Tile then holds, and goes with Margin 0.
+  await expect(page.locator("#tiles-svg-hint")).toHaveText(
+    "SVG-Kacheln haben keinen Rand. Es wird nur der Inhalt des Blattes exportiert (bei A4 quer und 10 mm: 277 × 190 mm). " +
+      "Für Kacheln in voller Blattgröße den Rand auf 0 setzen.",
+  );
+  await page.locator("#tiles-margin").fill("0");
+  await expect(page.locator("#tiles-svg-hint")).toBeHidden();
+  await page.locator("#tiles-margin").fill("10");
+  await expect(page.locator("#tiles-svg-hint")).toBeVisible();
   await expect(page.locator("#tile-grid line")).toHaveCount(4 + 3);
   await page.locator("#zoom-clip").click();
   await page.waitForTimeout(800);
@@ -99,6 +108,19 @@ test("Tiled Export: settings, grid preview, folder, multipage, ZIP fallback, can
   expect(Object.keys(files).length).toBe(20);
   console.log(await page.locator("#export-status").innerText());
 
+  // The same Tiles as SVG into the folder: one bare SVG per Tile (none of these is empty).
+  await page.locator("#export-svg").click();
+  await expect(page.locator("#export-status")).toContainText("20 SVG-Kacheln im Ordner „Kacheln“ gespeichert", { timeout: 120_000 });
+  await expect(page.locator("#export-status")).not.toContainText("übersprungen");
+  await expect(page.locator("#export-status")).toContainText("Größte Kachel");
+  const svgs = await page.evaluate(() =>
+    Object.entries((window as unknown as { __folderFiles: Record<string, number> }).__folderFiles).filter(([n]) => n.endsWith(".svg")),
+  );
+  expect(svgs.length).toBe(20);
+  expect(svgs.map(([n]) => n)).toContain("test-plan_Ausschnitt_Kachel_D5.svg");
+  expect(svgs.every(([, size]) => size > 1000)).toBe(true);
+  console.log(await page.locator("#export-status").innerText());
+
   // Free grid: 3 columns by count, rows of 250 mm by length.
   await page.locator("label:has(input[value=free]) span").click();
   await page.locator("#tiles-cols").fill("3");
@@ -106,9 +128,10 @@ test("Tiled Export: settings, grid preview, folder, multipage, ZIP fallback, can
   await expect(page.locator("#tiles-col-w")).toHaveValue("396.3");
   await expect(page.locator("#tiles-rows")).toHaveValue("3");
   await expect(page.locator("#tiles-rows-rest")).toHaveText("letzte Zeile 100 mm");
+  await expect(page.locator("#tiles-svg-hint")).toBeHidden();
   await expect(page.locator("#tiles-col-w").locator("xpath=ancestor::div[contains(@class,'field')]")).toHaveClass(/derived/);
   await expect(page.locator("#tiles-rows").locator("xpath=ancestor::div[contains(@class,'field')]")).toHaveClass(/derived/);
-  await expect(page.locator("#tiles-summary")).toContainText("3 Spalten × 3 Zeilen = 9 Blätter");
+  await expect(page.locator("#tiles-summary")).toContainText("3 Spalten × 3 Zeilen = 9 Kacheln");
   // The leading values stay when the Clip changes; the derived ones follow.
   await setClip(page, 0, 2000, 900, 700);
   await expect(page.locator("#tiles-col-w")).toHaveValue("300");
@@ -146,8 +169,8 @@ test("Tiled Export: settings, grid preview, folder, multipage, ZIP fallback, can
   await page.locator("label:has(input[value=paper]) span").click();
   await setClip(page, 0, 0, 1188.9, 14270.9);
   await page.locator("#tiles-orientation").selectOption("portrait");
-  await expect(page.locator("#tiles-summary")).toContainText("7 Spalten × 52 Zeilen = 364 Blätter");
-  await expect(page.locator("#tiles-summary .warn")).toContainText("Viele Blätter");
+  await expect(page.locator("#tiles-summary")).toContainText("7 Spalten × 52 Zeilen = 364 Kacheln");
+  await expect(page.locator("#tiles-summary .warn")).toContainText("Viele Kacheln");
   // The busy window (ADR 0012) shows the progress and offers "Abbrechen", also as Esc.
   await page.locator("#export-pdf").click();
   await expect(page.locator("#busy-text")).toContainText("Kachel", { timeout: 60_000 });
@@ -177,8 +200,7 @@ test("Tiled Export: settings, grid preview, folder, multipage, ZIP fallback, can
   await expect(page.locator("#plan-info")).toContainText("geladen in", { timeout: 60_000 });
   await expect(page.locator("#busy")).toBeHidden();
   await page.locator("#tiles-on").uncheck({ force: true });
-  await expect(page.locator("#export-svg")).toBeEnabled();
-  await expect(page.locator("#svg-note")).toBeHidden();
+  await expect(page.locator("#export-svg")).toHaveText("SVG exportieren");
   await expect(page.locator("#export-pdf")).toHaveText("PDF exportieren");
   expect(errors).toEqual([]);
 });

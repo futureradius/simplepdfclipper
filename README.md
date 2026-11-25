@@ -35,10 +35,16 @@ double-click. No server, no upload, no installation.
 5. Export as SVG (for the whiteboard tool) or as PDF (for documentation; everything outside the
    Regions is removed from the file). Several Regions are exported together as one page,
    as arranged. The "Save as" dialog opens first, then the export is computed.
-6. To print a large Clip at real size, switch on "Auf Blätter aufteilen": the Clip is cut
-   into Tiles by paper format (A4–A0 or custom) or freely (columns/rows by count or by
-   length), each on its own Sheet with a Margin, cut marks and a label. Saved as numbered
-   single PDFs into a folder, or as one multipage PDF (ADR 0013).
+6. To print a large Clip at real size, or to get a huge Clip into the whiteboard in
+   pieces, switch on "In Kacheln aufteilen": the Clip is cut into Tiles by paper format
+   (A4–A0 or custom) or freely (columns/rows by count or by length).
+   - "PDF-Kacheln exportieren": each Tile on its own Sheet with a Margin, cut marks and a
+     label, as numbered single PDFs into a folder or as one multipage PDF.
+   - "SVG-Kacheln exportieren": each Tile as a bare SVG (no Margin; in paper format the
+     Margin still sets the Tile size, Margin 0 gives full-size Tiles), as numbered single
+     files into a folder or all in one ZIP. Empty Tiles are skipped. The Tiles keep their
+     real size and meet exactly, so they snap together edge to edge in the whiteboard
+     (ADR 0013).
 7. Setups you use often can be saved as named Presets ("Vorlage" in step 3, ✎ to
    save, rename, delete, and to export or import them as a JSON file for colleagues).
    Picking one sets all export settings at once; the Clip stays (ADR 0015).
@@ -74,6 +80,7 @@ is inside, otherwise the letter is removed (ADR 0005).
 - [x] Clips of several Regions, chosen on the Plan, exported as one page (#36)
 - [x] Arranging Regions freely in an "Anordnen" view (#37)
 - [x] Clip presets, stretched to Plans of another size (#38)
+- [x] Tiled Export as SVG for the whiteboard (#46)
 
 ## Development
 

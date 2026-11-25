@@ -181,6 +181,8 @@ interface Collector {
   device: DeviceFunctions;
   /** The page transformation the device expects (page space -> export units). */
   pageToUnits: Matrix;
+  /** What can show at all (export units): the Clip or Region, before any clip path. */
+  area: Rect;
   /** Ends collecting and returns what was recorded. */
   finish(): Collected;
 }
@@ -626,6 +628,7 @@ function collector(mupdf: typeof MuPDF, page: MuPDF.Page, opts: CollectOptions):
   return {
     device,
     pageToUnits,
+    area,
     finish() {
       outlines?.destroy();
       return { items, clips, patterns, width, height, unsupported };
@@ -633,10 +636,51 @@ function collector(mupdf: typeof MuPDF, page: MuPDF.Page, opts: CollectOptions):
   };
 }
 
+/**
+ * Which arguments of a device callback MuPDF.js keeps a reference for (Path, Text,
+ * StrokeState, ColorSpace), by position. Images and shades are borrowed, not kept.
+ */
+const KEPT_ARGS: Partial<Record<keyof DeviceFunctions, number[]>> = {
+  fillPath: [0, 3],
+  strokePath: [0, 1, 3],
+  clipPath: [0],
+  clipStrokePath: [0, 1],
+  fillText: [0, 2],
+  strokeText: [0, 1, 3],
+  clipText: [0],
+  clipStrokeText: [0, 1],
+  ignoreText: [0],
+  fillImageMask: [2],
+  beginMask: [2],
+  beginGroup: [1],
+};
+
+/**
+ * MuPDF.js wraps every Path, Text, StrokeState and ColorSpace it hands a JS device in an
+ * object holding a reference, freed only when the garbage collector finalises the
+ * wrapper. The wrappers are tiny, so it hardly runs: one pass over a big Plan used to
+ * leave ~300 MB of WASM memory behind, and some 40 passes ran out of memory (#46).
+ * Release them as soon as the callback returns (the collector keeps only plain data).
+ */
+function releasing(fns: DeviceFunctions): DeviceFunctions {
+  const out: Record<string, unknown> = { ...fns };
+  for (const [name, kept] of Object.entries(KEPT_ARGS) as [keyof DeviceFunctions, number[]][]) {
+    const f = fns[name] as ((...args: unknown[]) => unknown) | undefined;
+    out[name] = (...args: unknown[]) => {
+      try {
+        return f?.(...args);
+      } finally {
+        for (const i of kept) (args[i] as { destroy(): void } | undefined)?.destroy();
+      }
+    };
+  }
+  return out as DeviceFunctions;
+}
+
 /** Runs the Plan's page through the collector for `opts`. */
 export function collect(mupdf: typeof MuPDF, page: MuPDF.Page, opts: CollectOptions): Collected {
   const c = collector(mupdf, page, opts);
-  const dev = new mupdf.Device(c.device);
+  const dev = new mupdf.Device(releasing(c.device));
   try {
     page.run(dev, c.pageToUnits);
     dev.close();
@@ -665,9 +709,25 @@ const CTM_ARG: Partial<Record<keyof DeviceFunctions, number>> = {
 };
 
 /**
- * Collects several Regions of a stitched Clip (ADR 0016) in one pass over the page:
- * parsing the page and handing every drawing call to JS is most of an export's time, so
- * each call is shared by all Regions, shifted to each Region's place in the Clip.
+ * Drawing calls the shared pass hands only to the collectors they can reach (bounds
+ * once, in JS), and where their shape is. Each collector would drop the others itself,
+ * but only after asking MuPDF for the bounds again: with the many collectors of an SVG
+ * Tiled Export (#46) that was most of the time. strokeText is left out: the collector
+ * notes it as unsupported before culling.
+ */
+const CULLED: Partial<Record<keyof DeviceFunctions, { stroke: number | null }>> = {
+  fillPath: { stroke: null },
+  strokePath: { stroke: 1 },
+  fillText: { stroke: null },
+};
+/** More than any collector's own slack (TEXT_SLACK for text, 1 unit otherwise). */
+const CULL_SLACK = TEXT_SLACK + 2;
+
+/**
+ * Collects several Regions of a stitched Clip (ADR 0016), or the pieces of many Tiles,
+ * in one pass over the page: parsing the page and handing every drawing call to JS is
+ * most of an export's time, so each call is shared by all of them, shifted to each one's
+ * place in its export.
  */
 export function collectAll(mupdf: typeof MuPDF, page: MuPDF.Page, all: CollectOptions[]): Collected[] {
   const cs = all.map((o) => collector(mupdf, page, o));
@@ -675,12 +735,32 @@ export function collectAll(mupdf: typeof MuPDF, page: MuPDF.Page, all: CollectOp
   const [bx0, by0] = page.getBounds();
   const base: Matrix = [PT_TO_UNITS, 0, 0, PT_TO_UNITS, -bx0! * PT_TO_UNITS, -by0! * PT_TO_UNITS];
   const shift = cs.map((c): Matrix => [1, 0, 0, 1, c.pageToUnits[4] - base[4], c.pageToUnits[5] - base[5]]);
+  // Each collector's area in the shared (unshifted) space, widened by the slack.
+  const reach = cs.map((c, i): Rect => ({
+    x0: c.area.x0 - shift[i]![4] - CULL_SLACK,
+    y0: c.area.y0 - shift[i]![5] - CULL_SLACK,
+    x1: c.area.x1 - shift[i]![4] + CULL_SLACK,
+    y1: c.area.y1 - shift[i]![5] + CULL_SLACK,
+  }));
+  // Inside a pattern tile, drawing calls are in pattern space: no culling there.
+  let tileDepth = 0;
   const fan: Record<string, (...args: unknown[]) => unknown> = {};
   for (const name of Object.keys(cs[0]!.device) as (keyof DeviceFunctions)[]) {
     const at = CTM_ARG[name];
+    const culled = cs.length > 1 ? CULLED[name] : undefined;
     fan[name] = (...args: unknown[]) => {
+      if (name === "endTile") tileDepth--;
+      let b: number[] | undefined;
+      if (culled && tileDepth === 0) {
+        const stroke = culled.stroke === null ? null : (args[culled.stroke] as MuPDF.StrokeState);
+        b = (args[0] as MuPDF.Path | MuPDF.Text).getBounds(stroke as MuPDF.StrokeState, args[at!] as Matrix);
+      }
       let result = 1;
       cs.forEach((c, i) => {
+        if (b) {
+          const r = reach[i]!;
+          if (b[2]! < r.x0 || b[0]! > r.x1 || b[3]! < r.y0 || b[1]! > r.y1) return;
+        }
         const a = [...args];
         if (at !== undefined) a[at] = concat(args[at] as Matrix, shift[i]!);
         const r = (c.device[name] as (...x: unknown[]) => unknown)(...a);
@@ -688,10 +768,11 @@ export function collectAll(mupdf: typeof MuPDF, page: MuPDF.Page, all: CollectOp
         // others ignore it (they suppress until endTile).
         if (name === "beginTile" && r === 0) result = 0;
       });
+      if (name === "beginTile") tileDepth++;
       return name === "beginTile" ? result : undefined;
     };
   }
-  const dev = new mupdf.Device(fan as DeviceFunctions);
+  const dev = new mupdf.Device(releasing(fan as DeviceFunctions));
   try {
     page.run(dev, base);
     dev.close();
