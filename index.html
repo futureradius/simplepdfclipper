@@ -251,20 +251,24 @@
       .preset-row .input:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
       .preset-row select { width: 100%; border: 0; background: transparent; padding: 6px; outline: none; }
       .preset-row .btn { width: 34px; padding: 0; }
-      dialog#presets { width: min(520px, calc(100% - 32px)); }
+      dialog#presets, dialog#clip-presets { width: min(520px, calc(100% - 32px)); }
+      .stretch-note { display: flex; align-items: flex-start; gap: 6px; margin: 0 0 12px; font-size: 13px; }
+      .stretch-note[hidden] { display: none; }
+      .stretch-note span { flex: 1; }
+      .stretch-note button { border: 0; background: transparent; padding: 0 2px; font-size: 16px; line-height: 1; cursor: pointer; color: var(--muted); }
       .preset-list { list-style: none; margin: 14px 0 0; padding: 0; border-top: 1px solid var(--line); max-height: min(40vh, 320px); overflow: hidden auto; }
       .preset-list li { display: flex; align-items: center; gap: 6px; padding: 6px 0; border-bottom: 1px solid var(--line); }
       .preset-list .name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
       .preset-list li.current span.name { font-weight: 600; color: var(--accent); }
       .preset-list input.name { border: 1px solid var(--accent); border-radius: 6px; padding: 5px 8px; outline: none; }
       .preset-list .btn { height: 28px; padding: 0 10px; font-size: 13px; }
-      #presets-empty { margin: 14px 0 0; }
+      #presets-empty, #clip-presets-empty { margin: 14px 0 0; }
       .preset-new { display: grid; gap: 8px; margin-top: 16px; }
       .preset-new input { border: 1px solid var(--line-strong); border-radius: 6px; padding: 6px 8px; outline: none; }
       .preset-new input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
       .preset-new .btn { white-space: normal; height: auto; min-height: 34px; }
-      #presets-msg { margin: 12px 0 0; font-size: 13px; }
-      dialog#presets .foot { gap: 8px; }
+      #presets-msg, #clip-presets-msg { margin: 12px 0 0; font-size: 13px; }
+      dialog#presets .foot, dialog#clip-presets .foot { gap: 8px; }
       /* ---- Page picker (ADR 0014) ------------------------------------------------ */
       .pager { display: flex; align-items: center; gap: 4px; margin: 8px 0 4px; }
       .pager[hidden] { display: none; }
@@ -388,6 +392,15 @@
 
         <section class="step">
           <h2><span class="n">2</span>Ausschnitt</h2>
+          <div class="preset-row">
+            <label for="clip-preset">Vorlage</label>
+            <div class="input"><select id="clip-preset" aria-label="Ausschnitt-Vorlage"></select></div>
+            <button class="btn" id="clip-presets-open" title="Ausschnitt-Vorlagen verwalten" aria-label="Ausschnitt-Vorlagen verwalten">✎</button>
+          </div>
+          <div class="warn stretch-note" id="stretch-note" role="status" hidden>
+            <span id="stretch-text"></span>
+            <button id="stretch-close" title="Hinweis schließen" aria-label="Hinweis schließen">×</button>
+          </div>
           <div class="modes" id="modes" role="group" aria-label="Modus" hidden>
             <button id="mode-plan" aria-pressed="true" title="Bereiche auf dem Plan wählen und ändern (B)">Bereiche wählen<kbd>B</kbd></button>
             <button id="mode-arrange" aria-pressed="false" title="Bereiche im Ausschnitt anordnen (A)">Anordnen<kbd>A</kbd></button>
@@ -560,6 +573,28 @@
         <button class="btn" id="presets-close">Schließen</button>
       </div>
       <input id="presets-file" type="file" accept=".json,application/json" hidden />
+    </dialog>
+
+    <dialog id="clip-presets" aria-labelledby="clip-presets-title">
+      <div class="body">
+        <h2 id="clip-presets-title">Ausschnitt-Vorlagen</h2>
+        <div class="muted">Eine Ausschnitt-Vorlage merkt sich alle Bereiche und ihre Anordnung, nicht die Export-Einstellungen. Auf einem Plan anderer Größe werden die Bereiche passend gestreckt. Vorlagen bleiben in diesem Browser; zum Weitergeben exportieren.</div>
+        <ul class="preset-list" id="clip-presets-list"></ul>
+        <p class="muted" id="clip-presets-empty">Noch keine Ausschnitt-Vorlagen.</p>
+        <div class="preset-new">
+          <input id="clip-preset-name" type="text" placeholder="Name, z. B. Legende + Kalenderwoche" aria-label="Name der neuen Ausschnitt-Vorlage" />
+          <button class="btn primary" id="clip-preset-save">Aktuellen Ausschnitt als neue Vorlage speichern</button>
+          <button class="btn" id="clip-preset-overwrite" hidden></button>
+        </div>
+        <p id="clip-presets-msg" role="status" hidden></p>
+      </div>
+      <div class="foot">
+        <button class="btn" id="clip-presets-export">Exportieren…</button>
+        <button class="btn" id="clip-presets-import">Importieren…</button>
+        <span class="spacer"></span>
+        <button class="btn" id="clip-presets-close">Schließen</button>
+      </div>
+      <input id="clip-presets-file" type="file" accept=".json,application/json" hidden />
     </dialog>
 
     <dialog id="busy" closedby="none" aria-labelledby="busy-text">

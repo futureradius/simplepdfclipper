@@ -32,3 +32,24 @@ corrects them. Accepted.
 Since #36 all Regions with their Layout are remembered (in mm, key
 `simplepdfclipper.lastRegions`); until #38 they are still ignored on a Plan they do not
 fit.
+
+## Built: stretching (2026-11-25, #38)
+
+- **Stored** as the Regions in mm (`simplepdfclipper.lastRegions`, unchanged) plus the
+  Plan size they were made on (`simplepdfclipper.lastPlanSize`); Clip presets hold
+  both too. That is the same as storing them relative to the Plan, but restores a Plan of
+  the same size bit for bit. Regions stored before #38 have no Plan size and are still
+  kept only if they fit.
+- **Same size** means both ratios within 1e-6 of 1: MuPDF keeps page sizes as 32-bit
+  floats, so the same Plan reads back a few µm different.
+- **Stretching** (`stretchRegions` in `src/export/regions.ts`, `fitClip` in
+  `src/ui/clippresets.ts`): per axis, every Layout edge is mapped once by the factor,
+  edges that coincide (touching Regions) to the very same number, so later resizes still
+  find the touching chains; a Region's size is the distance between its mapped edges.
+  Its Plan rectangle gets the same size at its scaled position, kept on the Plan.
+- **Note:** a yellow box at the top of step 2, e.g. "Bereiche an die Plangröße
+  angepasst: vertikal um +2,1 % gestreckt. Bitte prüfen."; a shrunk axis says
+  "gestaucht" with a minus sign, both axes are listed when both changed, a change under
+  0.05 % reads "< 0,1 %". It closes with × or when a Region's rectangle or place
+  changes (drawn, resized, moved, arranged, removed, "Neu anordnen"); selecting or
+  renumbering keeps it.

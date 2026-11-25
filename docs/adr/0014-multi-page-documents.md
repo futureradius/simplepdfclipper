@@ -32,7 +32,8 @@ ADR 0005).
   the picker with the current page marked. Shown only for multi-page Documents.
   Disabled while a page is loading or an export runs.
 - **Switching pages:** the Clip is kept if it fits the new page, otherwise reset to the
-  default (the ADR 0007 rule, as on opening a file). The view starts with the whole
+  default (the ADR 0007 rule, as on opening a file). Since #38 it is stretched to a page
+  of another size instead, with a note (ADR 0007). The view starts with the whole
   page (ADR 0012). Snap targets are extracted again for the new page.
 - **Exports contain only the chosen page.** The PDF export reduces the copied Document
   to that page before redacting (`rearrangePages`), also when page 1 is chosen. Every

@@ -5,7 +5,20 @@ import { chooseFolder, chooseSaveTarget, download, writeToFolder, type Directory
 import { rowName, tiles, type TileGrid } from "./export/tilegrid";
 import { TilesPanel } from "./ui/tilespanel";
 import { zip, type ZipEntry } from "./ui/zip";
-import { loadExportSettings, loadStoredRegions, storeRegions } from "./ui/storage";
+import { loadClipPresets, loadExportSettings, loadStoredRegions, storeClipPresets, storeRegions } from "./ui/storage";
+import {
+  CLIP_PRESET_NAMES,
+  clipPresetsFromJson,
+  clipPresetsToJson,
+  fitClip,
+  sameClip,
+  stretchNote,
+  type ClipPreset,
+  type PlanSize,
+  type SavedClip,
+  type Stretch,
+} from "./ui/clippresets";
+import { PresetMenu } from "./ui/presetmenu";
 import { PresetsPanel } from "./ui/presetspanel";
 import { dragClip, onPlan, type Handle, type Point } from "./ui/clipdrag";
 import {
@@ -132,12 +145,61 @@ function clampRect(c: ClipMm): ClipMm {
 }
 
 const rectOf = (r: Region): ClipMm => ({ x: r.x, y: r.y, width: r.width, height: r.height });
+const planSize = (): PlanSize | undefined => plan && { widthMm: plan.widthMm, heightMm: plan.heightMm };
+
+/** The Regions as a set, for telling an edit from a mere selection or renumbering. */
+const geometry = (rs: readonly Region[]) => rs.map((r) => JSON.stringify([r.x, r.y, r.width, r.height, r.at.x, r.at.y])).sort().join();
+
+// ---- Stretch note (ADR 0007) -------------------------------------------------------
+/** Shows how a restored or loaded Clip was stretched to this Plan, or hides the note. */
+function showStretch(s: Stretch | undefined): void {
+  $("stretch-note").hidden = !s;
+  $("stretch-text").textContent = s ? stretchNote(s) : "";
+}
+$("stretch-close").addEventListener("click", () => showStretch(undefined));
+
+/** Regions restored or loaded onto this Plan: selected first Region, stretch note if stretched. */
+function loadRegions(next: { regions: Region[]; stretch?: Stretch }): void {
+  drawing = undefined;
+  setRegions(next.regions, 0);
+  showStretch(next.stretch);
+}
+
+// ---- Clip presets (ADR 0015) ------------------------------------------------------
+const clipPresets = new PresetMenu<ClipPreset, SavedClip>({
+  prefix: "clip-",
+  rules: CLIP_PRESET_NAMES,
+  plural: "Ausschnitt-Vorlagen",
+  fileName: "simplepdfclipper-Ausschnitt-Vorlagen.json",
+  overwriteLabel: (name) => `„${name}“ mit dem aktuellen Ausschnitt überschreiben`,
+  changedTitle: "Bereiche geändert. Vorlage erneut wählen, um sie wiederherzustellen.",
+  sameTitle: "Der aktuelle Ausschnitt entspricht schon dieser Vorlage.",
+  current() {
+    const size = planSize();
+    return size && regions.length > 0
+      ? { value: { plan: size, regions: normaliseLayout(regions) } }
+      : { problem: "Es gibt keinen Bereich zum Speichern. Ziehe auf dem Plan einen Bereich auf." };
+  },
+  valueOf: (p) => p.clip,
+  make: (name, clip) => ({ name, clip }),
+  apply(clip) {
+    const size = planSize();
+    if (clip && size) loadRegions(fitClip(clip, size));
+  },
+  same: (current, saved) => !!saved && sameClip(current, saved),
+  load: loadClipPresets,
+  store: storeClipPresets,
+  toJson: clipPresetsToJson,
+  fromJson: clipPresetsFromJson,
+});
 
 /**
  * Shows the Regions everywhere (view, minimap, list, fields, Tile grid) and remembers
  * them (ADR 0007). With `from: "fields"` the fields keep what is being typed.
  */
 function setRegions(next: Region[], sel: number | undefined, from: "fields" | "other" = "other", guides: GuideLine[] = []): void {
+  // An edited Region ends the stretch note (ADR 0007).
+  if (geometry(next) !== geometry(regions)) showStretch(undefined);
   regions = next;
   selected = sel !== undefined && sel < next.length ? sel : undefined;
   // "Anordnen" needs at least two Regions (ADR 0016).
@@ -154,7 +216,9 @@ function setRegions(next: Region[], sel: number | undefined, from: "fields" | "o
   $("fields-caption").textContent = cur ? `Bereich ${selected! + 1} ${mode === "plan" ? "auf dem Plan" : "im Ausschnitt"}` : "";
   viewer.setRegions(regions, selected, guides);
   minimap.setRegions(regions, selected);
-  storeRegions(regions);
+  const size = planSize();
+  if (size) storeRegions(regions, size);
+  clipPresets.render();
   tilesPanel.update({ x: 0, y: 0, ...clipSize(regions) });
   showRegionList();
   showTileGrid();
@@ -163,35 +227,43 @@ function setRegions(next: Region[], sel: number | undefined, from: "fields" | "o
 
 /** The list "Bereich 1, 2, …" with a remove button each, and the Clip's size. */
 function showRegionList(): void {
-  $("regions").replaceChildren(
-    ...regions.map((_, i) => {
-      const li = document.createElement("li");
-      li.classList.toggle("selected", i === selected);
-      const pick = document.createElement("button");
-      pick.className = "pick";
-      pick.textContent = `Bereich ${i + 1}`;
-      pick.title = "Klicken: wählen · Ziehen: Reihenfolge ändern";
-      pick.addEventListener("click", () => {
-        if (!listDragged) setRegions(regions, i);
-      });
-      pick.addEventListener("pointerdown", (e) => dragInList(e, i, li));
-      const remove = document.createElement("button");
-      remove.className = "remove";
-      remove.textContent = "×";
-      remove.title = `Bereich ${i + 1} entfernen`;
-      remove.setAttribute("aria-label", `Bereich ${i + 1} entfernen`);
-      remove.addEventListener("click", () => removeAt(i));
-      li.append(pick, remove);
-      return li;
-    }),
-  );
-  $("regions").hidden = regions.length === 0;
+  const list = $("regions");
+  // Same number of Regions: only the selection changes. Rebuilding would swallow a click
+  // whose mousedown made a field fire "change" (which shows the Regions again).
+  if (list.children.length === regions.length) {
+    [...list.children].forEach((li, i) => li.classList.toggle("selected", i === selected));
+  } else {
+    list.replaceChildren(...regions.map((_, i) => regionItem(i)));
+  }
+  list.hidden = regions.length === 0;
   $("no-region").hidden = regions.length > 0;
   const size = clipSize(regions);
   $("clip-size").textContent =
     regions.length === 0 ? "" : `Ausschnitt: ${de(size.width)} × ${de(size.height)} mm${regions.length > 1 ? ` aus ${regions.length} Bereichen` : ""}`;
   $("relayout").hidden = regions.length < 2;
   $("modes").hidden = regions.length < 2;
+}
+
+/** "Bereich n" in the list: click selects, drag renumbers, × removes. */
+function regionItem(i: number): HTMLLIElement {
+  const li = document.createElement("li");
+  li.classList.toggle("selected", i === selected);
+  const pick = document.createElement("button");
+  pick.className = "pick";
+  pick.textContent = `Bereich ${i + 1}`;
+  pick.title = "Klicken: wählen · Ziehen: Reihenfolge ändern";
+  pick.addEventListener("click", () => {
+    if (!listDragged) setRegions(regions, i);
+  });
+  pick.addEventListener("pointerdown", (e) => dragInList(e, i, li));
+  const remove = document.createElement("button");
+  remove.className = "remove";
+  remove.textContent = "×";
+  remove.title = `Bereich ${i + 1} entfernen`;
+  remove.setAttribute("aria-label", `Bereich ${i + 1} entfernen`);
+  remove.addEventListener("click", () => removeAt(i));
+  li.append(pick, remove);
+  return li;
 }
 
 /** True right after a drag in the list, so the click that ends it does not select. */
@@ -232,6 +304,7 @@ function dragInList(e: PointerEvent, from: number, li: HTMLLIElement): void {
     listDragged = true;
     setTimeout(() => (listDragged = false), 0);
     const to = [...list.children].indexOf(li);
+    list.replaceChildren(); // the items were moved: build them anew
     if (ev.type === "pointercancel" || to === from) return setRegions(regions, selected);
     setRegions(reorderRegion(regions, from, to), to);
   };
@@ -567,18 +640,21 @@ async function showPage(doc: { name: string; fileName: string; pages: PageSize[]
       viewer.setMode("plan");
     }
 
-    // Restore the last Regions if they fit this page (ADR 0007), else one sensible Region.
+    // Restore the last Regions, stretched to this page if it has another size (ADR 0007),
+    // else one sensible Region. Regions stored before their Plan size was (#38) are kept
+    // only if they fit.
     const stored = loadStoredRegions();
     const { widthMm, heightMm } = plan;
-    const fits =
-      stored &&
-      stored.length > 0 &&
-      stored.every((r) => r.x >= 0 && r.y >= 0 && r.x + r.width <= widthMm + 0.05 && r.y + r.height <= heightMm + 0.05);
-    drawing = undefined;
-    setRegions(
-      fits ? stored.map((r) => ({ ...clampRect(r), at: r.at })) : single({ x: 0, y: 0, width: widthMm, height: Math.min(600, heightMm) }),
-      0,
-    );
+    const fits = (rs: Region[]) => rs.every((r) => r.x >= 0 && r.y >= 0 && r.x + r.width <= widthMm + 0.05 && r.y + r.height <= heightMm + 0.05);
+    const restored =
+      !stored || stored.regions.length === 0
+        ? undefined
+        : stored.plan
+          ? fitClip({ plan: stored.plan, regions: stored.regions }, { widthMm, heightMm })
+          : fits(stored.regions)
+            ? { regions: stored.regions.map((r) => ({ ...clampRect(r), at: r.at })) }
+            : undefined;
+    loadRegions(restored ?? { regions: single({ x: 0, y: 0, width: widthMm, height: Math.min(600, heightMm) }) });
     setMode("plan");
     // Start with the whole Plan in view (ADR 0012): an overview first, not "in the thick of it".
     viewer.fitPlan();
